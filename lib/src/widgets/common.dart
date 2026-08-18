@@ -17,7 +17,7 @@ class BrandMark extends StatelessWidget {
     image: true,
     child: ColorFiltered(
       colorFilter: ColorFilter.mode(
-        dark ? AppColors.yellow : AppColors.black,
+        dark ? Colors.white : AppColors.black,
         BlendMode.srcIn,
       ),
       child: Image.asset(

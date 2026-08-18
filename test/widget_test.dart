@@ -24,15 +24,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(theme: buildTheme(), home: const SplashScreen()),
     );
-    await tester.pump(const Duration(milliseconds: 2100));
+    await tester.pump(const Duration(milliseconds: 1800));
 
     expect(find.text('SELECT SMART. ENTER SMOOTH.'), findsOneWidget);
-    expect(
-      find.image(
-        const AssetImage('assets/brand/tkts-wordmark-transparent.png'),
-      ),
-      findsWidgets,
-    );
+    for (var index = 0; index < 7; index++) {
+      expect(find.byKey(ValueKey('splash-letter-$index')), findsWidgets);
+    }
   });
 
   testWidgets('brand mark renders the black TKTS APP wordmark', (tester) async {

@@ -33,7 +33,7 @@ class EvntsApp extends StatefulWidget {
 }
 
 class _EvntsAppState extends State<EvntsApp> {
-  static const currentBuild = 4006;
+  static const currentBuild = 4007;
   final navigatorKey = GlobalKey<NavigatorState>();
   Timer? timer;
   final AppLinks appLinks = AppLinks();
@@ -415,146 +415,114 @@ class _SplashScreenState extends State<SplashScreen>
         animation: controller,
         builder: (context, _) {
           final progress = controller.value;
-          final firstLogo = Curves.easeOutBack.transform(
-            const Interval(.04, .25).transform(progress),
+          final darkScene = Curves.easeInOutCubic.transform(
+            const Interval(.56, .74).transform(progress),
           );
-          final firstReveal = Curves.easeOutExpo.transform(
-            const Interval(.04, .28).transform(progress),
+          final underline = Curves.easeOutExpo.transform(
+            const Interval(.42, .66).transform(progress),
           );
-          final yellowExit = const Cubic(
-            0.76,
-            0,
-            0.24,
-            1,
-          ).transform(const Interval(.28, .54).transform(progress));
-          final blackScene = Curves.easeOutCubic.transform(
-            const Interval(.39, .62).transform(progress),
+          final tagline = Curves.easeOutCubic.transform(
+            const Interval(.68, .82).transform(progress),
           );
-          final secondLogo = Curves.easeOutBack.transform(
-            const Interval(.43, .7).transform(progress),
-          );
-          final secondReveal = Curves.easeOutExpo.transform(
-            const Interval(.45, .72).transform(progress),
-          );
-          final details = Curves.easeOutCubic.transform(
-            const Interval(.64, .82).transform(progress),
-          );
-          final sweep = const Interval(.56, .84).transform(progress);
           final exit =
               1 -
               Curves.easeInCubic.transform(
                 const Interval(.9, 1).transform(progress),
               );
-          final size = MediaQuery.sizeOf(context);
 
           return AnnotatedRegion(
-            value: progress < .44 ? AppSystemUi.dark : AppSystemUi.light,
+            value: progress < .66 ? AppSystemUi.dark : AppSystemUi.light,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ColoredBox(color: AppColors.black),
+                const ColoredBox(color: AppColors.yellow),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FractionallySizedBox(
+                    widthFactor: darkScene,
+                    heightFactor: 1,
+                    child: const ColoredBox(color: AppColors.black),
+                  ),
+                ),
                 Opacity(
-                  opacity: blackScene * exit,
-                  child: _AmbientBarcode(progress: progress),
+                  opacity: .08 * exit,
+                  child: _AmbientBarcode(
+                    progress: progress,
+                    color: Color.lerp(
+                      AppColors.black,
+                      AppColors.yellow,
+                      darkScene,
+                    )!,
+                  ),
                 ),
                 Center(
                   child: Opacity(
-                    opacity: blackScene * exit,
-                    child: Transform.translate(
-                      offset: Offset(0, 18 * (1 - secondLogo)),
-                      child: Transform.scale(
-                        scale: .84 + (.16 * secondLogo),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 260,
-                              height: 126,
-                              child: ClipRect(
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  widthFactor: secondReveal.clamp(.001, 1),
-                                  child: ShaderMask(
-                                    blendMode: BlendMode.modulate,
-                                    shaderCallback: (bounds) {
-                                      final x = -1.5 + (3 * sweep);
-                                      return LinearGradient(
-                                        begin: Alignment(x - .25, 0),
-                                        end: Alignment(x + .25, 0),
-                                        colors: const [
-                                          Colors.white,
-                                          Color(0xFFFFF5A8),
-                                          Colors.white,
-                                        ],
-                                        stops: const [0, .5, 1],
-                                      ).createShader(bounds);
-                                    },
-                                    child: const Center(
-                                      child: BrandMark(dark: true, height: 92),
-                                    ),
-                                  ),
+                    opacity: exit,
+                    child: Transform.scale(
+                      scale: .96 + (.04 * exit),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Opacity(
+                                opacity: 1 - darkScene,
+                                child: _SplashLetters(
+                                  progress: progress,
+                                  color: AppColors.black,
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            Opacity(
-                              opacity: details,
-                              child: Transform.translate(
-                                offset: Offset(0, 12 * (1 - details)),
-                                child: const Text(
-                                  'SELECT SMART. ENTER SMOOTH.',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 2.8,
-                                  ),
+                              Opacity(
+                                opacity: darkScene,
+                                child: _SplashLetters(
+                                  progress: progress,
+                                  color: Colors.white,
                                 ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Align(
+                            widthFactor: 1,
+                            child: Container(
+                              width: 236 * underline,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: Color.lerp(
+                                  AppColors.black,
+                                  AppColors.yellow,
+                                  darkScene,
+                                ),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Transform.translate(
-                  offset: Offset(0, -size.height * yellowExit),
-                  child: ColoredBox(
-                    color: AppColors.yellow,
-                    child: Center(
-                      child: Opacity(
-                        opacity: (1 - yellowExit) * firstLogo.clamp(0, 1),
-                        child: Transform.scale(
-                          scale: .78 + (.22 * firstLogo),
-                          child: SizedBox(
-                            width: 260,
-                            height: 126,
-                            child: ClipRect(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                widthFactor: firstReveal.clamp(.001, 1),
-                                child: const Center(
-                                  child: BrandMark(height: 92),
+                          ),
+                          const SizedBox(height: 18),
+                          Opacity(
+                            opacity: tagline,
+                            child: Transform.translate(
+                              offset: Offset(0, 10 * (1 - tagline)),
+                              child: Text(
+                                'SELECT SMART. ENTER SMOOTH.',
+                                style: TextStyle(
+                                  color: Color.lerp(
+                                    AppColors.black,
+                                    Colors.white,
+                                    darkScene,
+                                  ),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 2.4,
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-                if (yellowExit > 0 && yellowExit < 1)
-                  Positioned(
-                    top: size.height * (1 - yellowExit) - 3,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      height: 3,
-                      color: AppColors.yellow.withValues(alpha: .65),
-                    ),
-                  ),
               ],
             ),
           );
@@ -564,10 +532,73 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-class _AmbientBarcode extends StatelessWidget {
-  const _AmbientBarcode({required this.progress});
+class _SplashLetters extends StatelessWidget {
+  const _SplashLetters({required this.progress, required this.color});
 
   final double progress;
+  final Color color;
+
+  static const _letters = ['T', 'K', 'T', 'S', 'A', 'P', 'P'];
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'TKTS APP',
+    image: true,
+    child: ExcludeSemantics(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List.generate(_letters.length, (index) {
+          final start = .035 + (index * .052);
+          final end = start + .2;
+          final raw = Interval(start, end).transform(progress);
+          final enter = Curves.easeOutBack.transform(raw);
+          final isApp = index >= 4;
+          final direction = index.isEven ? -1.0 : 1.0;
+
+          return Padding(
+            padding: EdgeInsets.only(left: index == 4 ? 16 : 0),
+            child: Opacity(
+              opacity: raw.clamp(0, 1),
+              child: Transform.translate(
+                offset: Offset(
+                  direction * 9 * (1 - enter),
+                  (isApp ? 52 : -64) * (1 - enter),
+                ),
+                child: Transform.rotate(
+                  angle: direction * .09 * (1 - enter),
+                  child: Transform.scale(
+                    scale: .72 + (.28 * enter),
+                    child: Text(
+                      _letters[index],
+                      key: ValueKey('splash-letter-$index'),
+                      style: TextStyle(
+                        color: color,
+                        fontSize: isApp ? 46 : 58,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -3,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    ),
+  );
+}
+
+class _AmbientBarcode extends StatelessWidget {
+  const _AmbientBarcode({
+    required this.progress,
+    this.color = AppColors.yellow,
+  });
+
+  final double progress;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -586,7 +617,7 @@ class _AmbientBarcode extends StatelessWidget {
                 return Container(
                   width: width,
                   height: MediaQuery.sizeOf(context).height * 1.25,
-                  color: index % 3 == 0 ? AppColors.lavender : AppColors.yellow,
+                  color: index % 3 == 0 ? color.withValues(alpha: .55) : color,
                 );
               }),
             ),

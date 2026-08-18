@@ -56,19 +56,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     delay: Duration(milliseconds: 120),
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(24, 24, 24, 18),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: AppColors.yellow,
-                          borderRadius: BorderRadius.all(Radius.circular(18)),
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          child: BrandMark(height: 36),
-                        ),
-                      ),
+                      child: BrandMark(dark: true, height: 44),
                     ),
                   ),
                   Expanded(
