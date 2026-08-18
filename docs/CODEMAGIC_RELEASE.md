@@ -2,7 +2,8 @@
 
 The repository root contains `codemagic.yaml` with two workflows:
 
-- `android-release` builds a release APK and AAB.
+- `android-release` builds a release APK and AAB on the personal plan's
+  included macOS M2 runner.
 - `ios-release` builds a signed App Store IPA.
 
 Both workflows compile against `https://slktegy.com/api/v1` through the
