@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -634,8 +633,8 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           },
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
-            if (uri != null && !['http', 'https'].contains(uri.scheme)) {
-              unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+            if (uri == null ||
+                !isTrustedPaymentNavigationUrl(uri, widget.redirectPath)) {
               return NavigationDecision.prevent;
             }
             _inspectUrl(request.url);
@@ -670,7 +669,7 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           : const Duration(milliseconds: 240),
       curve: const Cubic(0.2, 0, 0, 1),
       child: FractionallySizedBox(
-        heightFactor: keyboardInset > 0 ? 1 : .995,
+        heightFactor: 1,
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
           child: ColoredBox(
@@ -679,7 +678,7 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
               children: [
                 Container(
                   color: AppColors.black,
-                  padding: const EdgeInsets.fromLTRB(14, 8, 8, 16),
+                  padding: const EdgeInsets.fromLTRB(14, 4, 8, 10),
                   child: Column(
                     children: [
                       Row(
@@ -713,11 +712,10 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
                         ],
                       ),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           SizedBox(
-                            width: 52,
-                            height: 52,
+                            width: 44,
+                            height: 44,
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
@@ -744,64 +742,107 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
                                 const Icon(
                                   Icons.schedule_rounded,
                                   color: Colors.white,
-                                  size: 22,
+                                  size: 20,
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'RESERVATION HELD',
-                                style: TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.8,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'RESERVATION HELD',
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.8,
+                                  ),
                                 ),
-                              ),
-                              AnimatedSwitcher(
-                                duration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 180),
-                                transitionBuilder: (child, animation) =>
-                                    FadeTransition(
-                                      opacity: animation,
-                                      child: SlideTransition(
-                                        position: Tween(
-                                          begin: const Offset(0, .12),
-                                          end: Offset.zero,
-                                        ).animate(animation),
-                                        child: child,
+                                AnimatedSwitcher(
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 180),
+                                  transitionBuilder: (child, animation) =>
+                                      FadeTransition(
+                                        opacity: animation,
+                                        child: SlideTransition(
+                                          position: Tween(
+                                            begin: const Offset(0, .12),
+                                            end: Offset.zero,
+                                          ).animate(animation),
+                                          child: child,
+                                        ),
                                       ),
+                                  child: Text(
+                                    _formattedRemaining,
+                                    key: ValueKey(remaining.inSeconds),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 27,
+                                      height: 1.05,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 3,
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures(),
+                                      ],
                                     ),
-                                child: Text(
-                                  _formattedRemaining,
-                                  key: ValueKey(remaining.inSeconds),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 31,
-                                    height: 1.05,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 3,
-                                    fontFeatures: [
-                                      FontFeature.tabularFigures(),
-                                    ],
+                                  ),
+                                ),
+                                const Text(
+                                  'Complete payment before time runs out',
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (redirectSeen || checking) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              key: const ValueKey('payment-confirming-header'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.yellow.withValues(alpha: .14),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: AppColors.yellow.withValues(
+                                    alpha: .32,
                                   ),
                                 ),
                               ),
-                              const Text(
-                                'Complete payment before time runs out',
-                                style: TextStyle(
-                                  color: Colors.white54,
-                                  fontSize: 10,
-                                ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox.square(
+                                    dimension: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.yellow,
+                                    ),
+                                  ),
+                                  SizedBox(width: 7),
+                                  Text(
+                                    'Confirming\npayment',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      height: 1.05,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -912,17 +953,6 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           ),
           child: const Text('Return to cart'),
         ),
-      );
-    }
-    if (redirectSeen || checking) {
-      return const _PaymentNotice(
-        key: ValueKey('payment-checking'),
-        color: Color(0xFFFFF6C9),
-        icon: Icons.sync_rounded,
-        iconColor: AppColors.coralDark,
-        title: 'Confirming payment',
-        message: 'Waiting for the secure confirmation from Paymob…',
-        loading: true,
       );
     }
     return const SizedBox.shrink(key: ValueKey('payment-active'));
@@ -1070,7 +1100,6 @@ class _PaymentNotice extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.message,
-    this.loading = false,
     this.action,
   });
 
@@ -1079,7 +1108,6 @@ class _PaymentNotice extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String message;
-  final bool loading;
   final Widget? action;
 
   @override
@@ -1093,12 +1121,7 @@ class _PaymentNotice extends StatelessWidget {
     ),
     child: Row(
       children: [
-        loading
-            ? const SizedBox.square(
-                dimension: 24,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
-              )
-            : Icon(icon, color: iconColor, size: 26),
+        Icon(icon, color: iconColor, size: 26),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -1133,11 +1156,29 @@ String _message(Object exception) => exception is ApiException
     : 'Something went wrong. Please try again.';
 
 bool isTrustedPaymobCheckoutUrl(Uri uri) {
-  final host = uri.host.toLowerCase();
-  final trustedHost = host == 'paymob.com' || host.endsWith('.paymob.com');
+  final trustedHost = isTrustedPaymobHost(uri.host);
   return uri.scheme == 'https' &&
       trustedHost &&
       uri.path.toLowerCase().contains('unifiedcheckout');
+}
+
+bool isTrustedPaymobHost(String value) {
+  final host = value.toLowerCase();
+  return host == 'paymob.com' ||
+      host.endsWith('.paymob.com') ||
+      host == 'paymobsolutions.com' ||
+      host.endsWith('.paymobsolutions.com');
+}
+
+bool isTrustedPaymentNavigationUrl(Uri uri, String redirectPath) {
+  if (uri.scheme != 'https' || uri.userInfo.isNotEmpty) return false;
+  if (isTrustedPaymobHost(uri.host)) return true;
+
+  final host = uri.host.toLowerCase();
+  final trustedApiHost = host == 'slktegy.com' || host.endsWith('.slktegy.com');
+  if (!trustedApiHost) return false;
+
+  return uri.path == redirectPath || uri.path.startsWith('/api/');
 }
 
 bool isCheckoutReturnUrl(String value, String redirectPath) {

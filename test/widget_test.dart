@@ -150,6 +150,59 @@ void main() {
     );
   });
 
+  test('payment WebView blocks navigation outside Paymob and SLKT API', () {
+    const redirectPath = '/checkout/42/success';
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('https://accept.paymob.com/payments/start'),
+        redirectPath,
+      ),
+      isTrue,
+    );
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('https://accept.paymobsolutions.com/api/acceptance/post_pay'),
+        redirectPath,
+      ),
+      isTrue,
+    );
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('https://slktegy.com$redirectPath?success=true'),
+        redirectPath,
+      ),
+      isTrue,
+    );
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('https://api.slktegy.com/api/v1/mobile/ping'),
+        redirectPath,
+      ),
+      isTrue,
+    );
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('https://slktegy.com/buyer'),
+        redirectPath,
+      ),
+      isFalse,
+    );
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('https://evil.example/checkout'),
+        redirectPath,
+      ),
+      isFalse,
+    );
+    expect(
+      isTrustedPaymentNavigationUrl(
+        Uri.parse('intent://pay/#Intent;scheme=bank;end'),
+        redirectPath,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('SLKT navigation keeps selected and unselected items readable', (
     tester,
   ) async {

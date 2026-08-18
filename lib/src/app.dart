@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'core/api_client.dart';
+import 'core/push_notifications.dart';
 import 'core/session_controller.dart';
 import 'core/theme.dart';
 import 'features/auth/auth_screen.dart';
@@ -23,17 +24,23 @@ bool isTicketsAppLink(Uri link) {
 }
 
 class EvntsApp extends StatefulWidget {
-  const EvntsApp({super.key, required this.api, required this.session});
+  const EvntsApp({
+    super.key,
+    required this.api,
+    required this.session,
+    required this.pushNotifications,
+  });
 
   final ApiClient api;
   final SessionController session;
+  final PushNotifications pushNotifications;
 
   @override
   State<EvntsApp> createState() => _EvntsAppState();
 }
 
 class _EvntsAppState extends State<EvntsApp> {
-  static const currentBuild = 4008;
+  static const currentBuild = 4009;
   final navigatorKey = GlobalKey<NavigatorState>();
   Timer? timer;
   final AppLinks appLinks = AppLinks();
@@ -91,6 +98,7 @@ class _EvntsAppState extends State<EvntsApp> {
   void dispose() {
     timer?.cancel();
     appLinkSubscription?.cancel();
+    widget.pushNotifications.dispose();
     super.dispose();
   }
 

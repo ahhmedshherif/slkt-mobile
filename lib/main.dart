@@ -22,7 +22,9 @@ Future<void> main() async {
   final api = ApiClient();
   final session = SessionController(api);
   final pushNotifications = PushNotifications(session);
-  runApp(EvntsApp(api: api, session: session));
-  unawaited(pushNotifications.initialize());
+  await pushNotifications.initialize();
+  runApp(
+    EvntsApp(api: api, session: session, pushNotifications: pushNotifications),
+  );
   unawaited(session.restore());
 }
