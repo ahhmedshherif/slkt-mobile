@@ -11,7 +11,7 @@ class SessionController extends ChangeNotifier {
   SessionKind kind = SessionKind.guest;
   Map<String, dynamic> user = const {};
   bool restoring = true;
-  bool _openTicketsRequested = false;
+  String? _requestedBuyerDestination;
 
   bool get isBuyer => kind == SessionKind.buyer;
   bool get isAdmin => ['admin', 'super_admin'].contains(user['role']);
@@ -68,13 +68,21 @@ class SessionController extends ChangeNotifier {
   }
 
   void requestOpenTickets() {
-    _openTicketsRequested = true;
+    requestBuyerDestination('tickets');
+  }
+
+  void requestBuyerDestination(String destination) {
+    _requestedBuyerDestination = destination;
     notifyListeners();
   }
 
   bool consumeOpenTicketsRequest() {
-    if (!_openTicketsRequested) return false;
-    _openTicketsRequested = false;
-    return true;
+    return consumeBuyerDestination() == 'tickets';
+  }
+
+  String? consumeBuyerDestination() {
+    final destination = _requestedBuyerDestination;
+    _requestedBuyerDestination = null;
+    return destination;
   }
 }

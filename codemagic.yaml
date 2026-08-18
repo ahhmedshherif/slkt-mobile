@@ -7,6 +7,7 @@ workflows:
       flutter: stable
       vars:
         API_BASE_URL: "https://slktegy.com/api/v1"
+        ONESIGNAL_DISABLE_LOCATION: "true"
     cache:
       cache_paths:
         - "$FLUTTER_ROOT/.pub-cache"
@@ -21,9 +22,11 @@ workflows:
       - name: Build release APK and AAB
         script: |
           flutter build apk --release \
-            --dart-define=API_BASE_URL="$API_BASE_URL"
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ONESIGNAL_APP_ID="${ONESIGNAL_APP_ID:-}"
           flutter build appbundle --release \
-            --dart-define=API_BASE_URL="$API_BASE_URL"
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ONESIGNAL_APP_ID="${ONESIGNAL_APP_ID:-}"
     artifacts:
       - build/**/outputs/**/*.apk
       - build/**/outputs/**/*.aab
@@ -43,6 +46,7 @@ workflows:
         bundle_identifier: com.slktegy.evntsApp
       vars:
         API_BASE_URL: "https://slktegy.com/api/v1"
+        ONESIGNAL_DISABLE_LOCATION: "true"
     cache:
       cache_paths:
         - "$FLUTTER_ROOT/.pub-cache"
@@ -62,6 +66,7 @@ workflows:
         script: |
           flutter build ipa --release \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ONESIGNAL_APP_ID="${ONESIGNAL_APP_ID:-}" \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa

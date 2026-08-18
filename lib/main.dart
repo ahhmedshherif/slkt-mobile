@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'src/app.dart';
 import 'src/core/api_client.dart';
 import 'src/core/session_controller.dart';
+import 'src/core/push_notifications.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,8 @@ Future<void> main() async {
   );
   final api = ApiClient();
   final session = SessionController(api);
+  final pushNotifications = PushNotifications(session);
   runApp(EvntsApp(api: api, session: session));
+  unawaited(pushNotifications.initialize());
   unawaited(session.restore());
 }

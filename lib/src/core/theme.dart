@@ -73,7 +73,7 @@ ThemeData buildTheme() {
       color: AppColors.paper,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(28)),
+        borderRadius: BorderRadius.all(Radius.circular(20)),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -81,22 +81,22 @@ ThemeData buildTheme() {
       fillColor: const Color(0xFFF0ECE8),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: AppColors.coral, width: 2),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(56),
-        shape: const StadiumBorder(),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: AppColors.black,
         foregroundColor: AppColors.yellow,
         disabledBackgroundColor: AppColors.black.withValues(alpha: .35),

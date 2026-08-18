@@ -34,14 +34,23 @@ class _BuyerShellState extends State<BuyerShell> {
       purchaseCompleted: _refreshCommerce,
       unreadNotifications: unreadNotifications,
       openNotifications: _openNotifications,
+      openTickets: _openTickets,
     ),
-    ExploreScreen(api: widget.api, purchaseCompleted: _refreshCommerce),
+    ExploreScreen(
+      api: widget.api,
+      purchaseCompleted: _refreshCommerce,
+      openTickets: _openTickets,
+    ),
     TicketsScreen(
       key: ticketsKey,
       api: widget.api,
       refreshSignal: commerceRefresh,
     ),
-    OrdersScreen(api: widget.api, refreshSignal: commerceRefresh),
+    OrdersScreen(
+      api: widget.api,
+      refreshSignal: commerceRefresh,
+      openTickets: _openTickets,
+    ),
     ProfileScreen(api: widget.api, session: widget.session),
   ];
 
@@ -56,14 +65,27 @@ class _BuyerShellState extends State<BuyerShell> {
   }
 
   void _handleSessionNavigation() {
-    if (!mounted || !widget.session.consumeOpenTicketsRequest()) return;
-    setState(() => index = 2);
+    if (!mounted) return;
+    final destination = widget.session.consumeBuyerDestination();
+    if (destination == null) return;
+    setState(() => index = destination == 'orders' ? 3 : 2);
     _refreshCommerce();
+    if (destination == 'transfers') {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => ticketsKey.currentState?.showTab(1),
+      );
+    }
   }
 
   void _refreshCommerce() {
     commerceRefresh.value++;
     _refreshNotifications();
+  }
+
+  void _openTickets() {
+    if (!mounted) return;
+    setState(() => index = 2);
+    _refreshCommerce();
   }
 
   Future<void> _refreshNotifications() async {
@@ -158,6 +180,7 @@ class HomeScreen extends StatefulWidget {
     required this.purchaseCompleted,
     required this.unreadNotifications,
     required this.openNotifications,
+    required this.openTickets,
   });
   final ApiClient api;
   final SessionController session;
@@ -165,6 +188,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback purchaseCompleted;
   final ValueListenable<int> unreadNotifications;
   final VoidCallback openNotifications;
+  final VoidCallback openTickets;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -272,6 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 widget.api,
                                 event,
                                 widget.purchaseCompleted,
+                                widget.openTickets,
                               ),
                             ),
                           ),
@@ -376,9 +401,11 @@ class ExploreScreen extends StatefulWidget {
     super.key,
     required this.api,
     required this.purchaseCompleted,
+    required this.openTickets,
   });
   final ApiClient api;
   final VoidCallback purchaseCompleted;
+  final VoidCallback openTickets;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -484,6 +511,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       widget.api,
                       event,
                       widget.purchaseCompleted,
+                      widget.openTickets,
                     ),
                   ),
                 );
@@ -608,11 +636,13 @@ class EventDetailScreen extends StatefulWidget {
     required this.slug,
     required this.preview,
     required this.onPurchaseCompleted,
+    required this.openTickets,
   });
   final ApiClient api;
   final String slug;
   final Map<String, dynamic> preview;
   final VoidCallback onPurchaseCompleted;
+  final VoidCallback openTickets;
 
   @override
   State<EventDetailScreen> createState() => _EventDetailScreenState();
@@ -1024,10 +1054,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             ),
             const SizedBox(height: 22),
             FilledButton(
-              onPressed: () => Navigator.pop(sheetContext),
-              child: Text(
-                paid ? 'Continue in TKTS APP' : 'View status in Orders',
-              ),
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                if (paid) {
+                  Navigator.pop(context);
+                  widget.openTickets();
+                }
+              },
+              child: Text(paid ? 'View my tickets' : 'View status in Orders'),
             ),
           ],
         ),
@@ -1416,16 +1450,32 @@ class _TicketsScreenState extends State<TicketsScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const PageHeading(
-                'Ticket wallet',
-                subtitle: 'Secure passes and transfer activity.',
+                'My passes',
+                subtitle: 'Tickets, QR access and transfers in one place.',
               ),
               const SizedBox(height: 18),
-              TabBar(
-                controller: tabs,
-                tabs: const [
-                  Tab(text: 'My tickets'),
-                  Tab(text: 'Transfers'),
-                ],
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECE6E0),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: TabBar(
+                  controller: tabs,
+                  padding: const EdgeInsets.all(4),
+                  dividerColor: Colors.transparent,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    color: AppColors.black,
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: AppColors.muted,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  tabs: const [
+                    Tab(text: 'Tickets'),
+                    Tab(text: 'Transfers'),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1559,8 +1609,8 @@ class WalletTicketCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => AspectRatio(
-    aspectRatio: 1.62,
+  Widget build(BuildContext context) => SizedBox(
+    height: 184,
     child: Card(
       color: AppColors.navy,
       clipBehavior: Clip.antiAlias,
@@ -1583,7 +1633,7 @@ class WalletTicketCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(22),
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1612,7 +1662,7 @@ class WalletTicketCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
                       height: 1.1,
                     ),
@@ -1664,7 +1714,7 @@ class TicketDetailScreen extends StatelessWidget {
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
             color: AppColors.navy,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             children: [
@@ -1688,7 +1738,7 @@ class TicketDetailScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: QrImageView(
                   data: ticket['qr_raw']?.toString() ?? '',
@@ -1808,7 +1858,7 @@ class _TransferSheetState extends State<TransferSheet> {
   Widget build(BuildContext context) => DecoratedBox(
     decoration: const BoxDecoration(
       color: AppColors.canvas,
-      borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     child: Padding(
       padding: EdgeInsets.fromLTRB(
@@ -2035,17 +2085,49 @@ class _TransferCardState extends State<TransferCard> {
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: incoming
+                          ? const Color(0xFFE1F7EE)
+                          : const Color(0xFFFFF6C9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      incoming
+                          ? Icons.call_received_rounded
+                          : Icons.call_made_rounded,
+                      color: incoming ? AppColors.success : AppColors.coralDark,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          incoming ? 'Incoming transfer' : 'Sent transfer',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        Text(
+                          incoming
+                              ? 'From ${otherParty['name'] ?? 'TKTS APP buyer'}'
+                              : 'To ${otherParty['name'] ?? 'TKTS APP buyer'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   StatusChip(
                     label: status.replaceAll('_', ' ').toUpperCase(),
                     color: _statusColor(status),
-                  ),
-                  const Spacer(),
-                  Text(
-                    incoming ? 'Incoming' : 'Sent',
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 12,
-                    ),
                   ),
                 ],
               ),
@@ -2059,12 +2141,11 @@ class _TransferCardState extends State<TransferCard> {
                 ).textTheme.titleLarge?.copyWith(fontSize: 17),
               ),
               const SizedBox(height: 8),
-              Text(
-                incoming
-                    ? 'From ${otherParty['name'] ?? 'TKTS APP buyer'}'
-                    : 'To ${otherParty['name'] ?? 'TKTS APP buyer'}',
-                style: const TextStyle(color: AppColors.muted),
-              ),
+              if (widget.transfer['created_at'] != null)
+                Text(
+                  _date(widget.transfer['created_at']),
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
               if (otherParty['contact'] != null) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -2158,9 +2239,11 @@ class OrdersScreen extends StatefulWidget {
     super.key,
     required this.api,
     required this.refreshSignal,
+    required this.openTickets,
   });
   final ApiClient api;
   final ValueListenable<int> refreshSignal;
+  final VoidCallback openTickets;
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -2223,47 +2306,86 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 14),
                     child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                StatusChip(
-                                  label:
-                                      order['status']
-                                          ?.toString()
-                                          .toUpperCase() ??
-                                      'PENDING',
-                                  color: _statusColor(
-                                    order['status']?.toString(),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OrderDetailScreen(
+                                api: widget.api,
+                                order: order,
+                                openTickets: widget.openTickets,
+                              ),
+                            ),
+                          );
+                          _reload();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  StatusChip(
+                                    label:
+                                        order['status']
+                                            ?.toString()
+                                            .toUpperCase() ??
+                                        'PENDING',
+                                    color: _statusColor(
+                                      order['status']?.toString(),
+                                    ),
                                   ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  order['order_number']?.toString() ?? '',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.muted,
+                                  const Spacer(),
+                                  Text(
+                                    order['order_number']?.toString() ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.muted,
+                                    ),
                                   ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                order['event']?['name']?.toString() ??
+                                    'Event order',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.titleLarge?.copyWith(fontSize: 17),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${order['total_amount']} ${order['currency'] ?? 'EGP'} • ${_date(order['created_at'])}',
+                                style: const TextStyle(color: AppColors.muted),
+                              ),
+                              if (order['status']?.toString() == 'pending') ...[
+                                const SizedBox(height: 12),
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.play_circle_outline_rounded,
+                                      size: 18,
+                                      color: AppColors.coralDark,
+                                    ),
+                                    SizedBox(width: 7),
+                                    Text(
+                                      'Open to continue payment',
+                                      style: TextStyle(
+                                        color: AppColors.coralDark,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    Spacer(),
+                                    Icon(Icons.chevron_right_rounded),
+                                  ],
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              order['event']?['name']?.toString() ??
-                                  'Event order',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.titleLarge?.copyWith(fontSize: 17),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '${order['total_amount']} ${order['currency'] ?? 'EGP'} • ${_date(order['created_at'])}',
-                              style: const TextStyle(color: AppColors.muted),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -2276,6 +2398,245 @@ class _OrdersScreenState extends State<OrdersScreen> {
       ),
     ),
   );
+}
+
+class OrderDetailScreen extends StatefulWidget {
+  const OrderDetailScreen({
+    super.key,
+    required this.api,
+    required this.order,
+    required this.openTickets,
+  });
+
+  final ApiClient api;
+  final Map<String, dynamic> order;
+  final VoidCallback openTickets;
+
+  @override
+  State<OrderDetailScreen> createState() => _OrderDetailScreenState();
+}
+
+class _OrderDetailScreenState extends State<OrderDetailScreen> {
+  late Future<Map<String, dynamic>> future = _load();
+  bool paymentBusy = false;
+
+  Future<Map<String, dynamic>> _load() => widget.api.get(
+    '/mobile/buyer/orders/${widget.order['id']}',
+    audience: 'buyer',
+  );
+
+  void _reload() => setState(() => future = _load());
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Order details')),
+    body: RefreshIndicator(
+      onRefresh: () async => _reload(),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 36),
+        children: [
+          AsyncPanel(
+            future: future,
+            builder: (context, response) {
+              final order = Map<String, dynamic>.from(
+                response['data'] as Map? ?? const {},
+              );
+              final event = Map<String, dynamic>.from(
+                order['event'] as Map? ?? const {},
+              );
+              final items = order['items'] as List? ?? const [];
+              final tickets = order['tickets'] as List? ?? const [];
+              final canResume = order['can_resume_payment'] == true;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            StatusChip(
+                              label:
+                                  order['status']?.toString().toUpperCase() ??
+                                  'PENDING',
+                              color: _statusColor(order['status']?.toString()),
+                            ),
+                            const Spacer(),
+                            Text(
+                              order['order_number']?.toString() ?? '',
+                              style: const TextStyle(color: Colors.white60),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 22),
+                        Text(
+                          event['name']?.toString() ?? 'Event order',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            height: 1.15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '${order['total_amount']} ${order['currency'] ?? 'EGP'}  •  ${_date(order['created_at'])}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Inside this order',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  ...items.map((raw) {
+                    final item = Map<String, dynamic>.from(raw as Map);
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        leading: Container(
+                          width: 42,
+                          height: 42,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.yellow,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${item['quantity'] ?? 0}×',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        title: Text(item['name']?.toString() ?? 'Ticket'),
+                        subtitle: Text(
+                          '${item['unit_price']} ${item['currency'] ?? order['currency'] ?? 'EGP'} each',
+                        ),
+                      ),
+                    );
+                  }),
+                  if (tickets.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Issued tickets',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 12),
+                    ...tickets.map((raw) {
+                      final ticket = Map<String, dynamic>.from(raw as Map);
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: ListTile(
+                          leading: const Icon(Icons.confirmation_num_rounded),
+                          title: Text(
+                            ticket['ticket_type']?.toString() ?? 'Admission',
+                          ),
+                          subtitle: Text(
+                            ticket['recipient_name']?.toString() ??
+                                'Ticket holder',
+                          ),
+                          trailing: StatusChip(
+                            label:
+                                ticket['status']?.toString().toUpperCase() ??
+                                'VALID',
+                            color: _statusColor(ticket['status']?.toString()),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                  if (canResume) ...[
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: paymentBusy ? null : () => _resume(order),
+                      icon: paymentBusy
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.lock_rounded),
+                      label: const Text('Continue secure payment'),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Your reservation remains held only until the countdown expires.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    ),
+                  ] else if (order['status'] == 'paid') ...[
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.openTickets();
+                      },
+                      icon: const Icon(Icons.confirmation_num_rounded),
+                      label: const Text('View my tickets'),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _resume(Map<String, dynamic> order) async {
+    final checkoutUrl = Uri.tryParse(order['checkout_url']?.toString() ?? '');
+    final expiresAt = DateTime.tryParse(
+      order['checkout_expires_at']?.toString() ?? '',
+    );
+    final serverTime = DateTime.tryParse(
+      order['server_time']?.toString() ?? '',
+    );
+    final orderId = (order['id'] as num?)?.toInt();
+    if (checkoutUrl == null ||
+        !isTrustedPaymobCheckoutUrl(checkoutUrl) ||
+        expiresAt == null ||
+        serverTime == null ||
+        orderId == null) {
+      showAppNotice(context, 'This payment session can no longer be resumed.');
+      _reload();
+      return;
+    }
+
+    setState(() => paymentBusy = true);
+    final result = await showPaymentSheet(
+      context: context,
+      api: widget.api,
+      checkoutUrl: checkoutUrl,
+      orderId: orderId,
+      orderNumber: order['order_number']?.toString() ?? 'Order #$orderId',
+      redirectPath:
+          order['redirect_path']?.toString() ?? '/checkout/$orderId/success',
+      expiresAt: expiresAt,
+      serverTime: serverTime,
+    );
+    if (!mounted) return;
+    setState(() => paymentBusy = false);
+    if (result?.status == CheckoutPaymentStatus.paid) {
+      Navigator.pop(context);
+      widget.openTickets();
+    } else {
+      _reload();
+    }
+  }
 }
 
 class ProfileScreen extends StatelessWidget {
@@ -2849,6 +3210,7 @@ void _openEvent(
   ApiClient api,
   Map<String, dynamic> event,
   VoidCallback onPurchaseCompleted,
+  VoidCallback openTickets,
 ) => Navigator.push(
   context,
   SlktEventPageRoute(
@@ -2858,6 +3220,7 @@ void _openEvent(
       slug: event['slug'].toString(),
       preview: event,
       onPurchaseCompleted: onPurchaseCompleted,
+      openTickets: openTickets,
     ),
   ),
 );

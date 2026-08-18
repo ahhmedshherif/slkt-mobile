@@ -33,7 +33,7 @@ class EvntsApp extends StatefulWidget {
 }
 
 class _EvntsAppState extends State<EvntsApp> {
-  static const currentBuild = 4007;
+  static const currentBuild = 4008;
   final navigatorKey = GlobalKey<NavigatorState>();
   Timer? timer;
   final AppLinks appLinks = AppLinks();

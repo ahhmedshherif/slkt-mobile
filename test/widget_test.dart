@@ -88,6 +88,7 @@ void main() {
           slug: api.event['slug'].toString(),
           preview: api.event,
           onPurchaseCompleted: () {},
+          openTickets: () {},
         ),
       ),
     );
@@ -344,6 +345,27 @@ void main() {
     );
     expect(find.byType(SnackBar), findsNothing);
   });
+
+  testWidgets('pending order exposes its items and resume action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: OrderDetailScreen(
+          api: _FakeOrderApi(),
+          order: const {'id': 14},
+          openTickets: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Inside this order'), findsOneWidget);
+    expect(find.text('2×'), findsOneWidget);
+    expect(find.text('Platinum'), findsOneWidget);
+    expect(find.text('Continue secure payment'), findsOneWidget);
+  });
 }
 
 class _FakeCheckoutApi extends ApiClient {
@@ -420,4 +442,38 @@ class _FailingTransferApi extends ApiClient {
     'No registered buyer matches these details.',
     statusCode: 422,
   );
+}
+
+class _FakeOrderApi extends ApiClient {
+  @override
+  Future<Map<String, dynamic>> get(
+    String path, {
+    String? audience,
+    Map<String, dynamic>? query,
+  }) async => {
+    'data': {
+      'id': 14,
+      'order_number': 'ORD-TEST14',
+      'status': 'pending',
+      'total_amount': 1000,
+      'currency': 'EGP',
+      'created_at': '2026-08-18T20:00:00+02:00',
+      'checkout_expires_at': '2026-08-18T20:15:00+02:00',
+      'server_time': '2026-08-18T20:02:00+02:00',
+      'checkout_url':
+          'https://accept.paymob.com/unifiedcheckout/?publicKey=test&clientSecret=test',
+      'redirect_path': '/checkout/14/success',
+      'can_resume_payment': true,
+      'event': {'name': 'TKTS Live'},
+      'items': [
+        {
+          'name': 'Platinum',
+          'quantity': 2,
+          'unit_price': 500,
+          'currency': 'EGP',
+        },
+      ],
+      'tickets': [],
+    },
+  };
 }

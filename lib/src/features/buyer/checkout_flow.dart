@@ -431,7 +431,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
         throw const ApiException('TKTS APP could not start secure payment.');
       }
       if (!mounted) return;
-      final result = await _showPaymentSheet(
+      final result = await showPaymentSheet(
         context: context,
         api: widget.api,
         checkoutUrl: checkoutUrl,
@@ -546,7 +546,7 @@ class _SummaryLine extends StatelessWidget {
   );
 }
 
-Future<CheckoutCompletion?> _showPaymentSheet({
+Future<CheckoutCompletion?> showPaymentSheet({
   required BuildContext context,
   required ApiClient api,
   required Uri checkoutUrl,
@@ -670,9 +670,9 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           : const Duration(milliseconds: 240),
       curve: const Cubic(0.2, 0, 0, 1),
       child: FractionallySizedBox(
-        heightFactor: keyboardInset > 0 ? 1 : .96,
+        heightFactor: keyboardInset > 0 ? 1 : .995,
         child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
           child: ColoredBox(
             color: Colors.white,
             child: Column(
@@ -874,13 +874,21 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
   Widget _statusPanel() {
     final status = terminalStatus;
     if (status == CheckoutPaymentStatus.paid) {
-      return const _PaymentNotice(
-        key: ValueKey('payment-paid'),
-        color: Color(0xFFE1F7EE),
+      return _PaymentNotice(
+        key: const ValueKey('payment-paid'),
+        color: const Color(0xFFE1F7EE),
         icon: Icons.verified_rounded,
         iconColor: AppColors.success,
         title: 'Payment confirmed',
         message: 'Your tickets are ready in the wallet.',
+        action: FilledButton(
+          onPressed: _finishPaid,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 42),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+          ),
+          child: const Text('View my tickets'),
+        ),
       );
     }
     if (status == CheckoutPaymentStatus.failed) {
@@ -949,17 +957,6 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
         poller?.cancel();
         countdown?.cancel();
         setState(() => terminalStatus = CheckoutPaymentStatus.paid);
-        await Future<void>.delayed(const Duration(milliseconds: 900));
-        if (mounted) {
-          Navigator.pop(
-            context,
-            CheckoutCompletion(
-              status: CheckoutPaymentStatus.paid,
-              orderId: widget.orderId,
-              orderNumber: widget.orderNumber,
-            ),
-          );
-        }
       } else if (['failed', 'cancelled', 'refunded'].contains(status)) {
         poller?.cancel();
         countdown?.cancel();
@@ -978,6 +975,15 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
       if (mounted) setState(() => checking = false);
     }
   }
+
+  void _finishPaid() => Navigator.pop(
+    context,
+    CheckoutCompletion(
+      status: CheckoutPaymentStatus.paid,
+      orderId: widget.orderId,
+      orderNumber: widget.orderNumber,
+    ),
+  );
 
   double get _progressValue =>
       (remaining.inMilliseconds / const Duration(minutes: 15).inMilliseconds)
