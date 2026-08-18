@@ -103,7 +103,7 @@ class ApiClient {
         }
       } else if (error.type == DioExceptionType.connectionError ||
           error.type == DioExceptionType.connectionTimeout) {
-        message = 'Cannot reach SLKT. Check your connection and try again.';
+        message = 'Cannot reach TKTS APP. Check your connection and try again.';
       }
       throw ApiException(
         message,

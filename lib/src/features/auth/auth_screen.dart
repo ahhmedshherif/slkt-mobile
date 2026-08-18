@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session_controller.dart';
@@ -49,7 +50,19 @@ class _AuthScreenState extends State<AuthScreen> {
                   delay: Duration(milliseconds: 120),
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(24, 24, 24, 18),
-                    child: BrandMark(dark: true, height: 44),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppColors.yellow,
+                        borderRadius: BorderRadius.all(Radius.circular(18)),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        child: BrandMark(height: 36),
+                      ),
+                    ),
                   ),
                 ),
                 Expanded(
@@ -609,12 +622,12 @@ class OtpScreen extends StatefulWidget {
   State<OtpScreen> createState() => _OtpScreenState();
 }
 
-class _OtpScreenState extends State<OtpScreen>
-    with SingleTickerProviderStateMixin {
-  final controllers = List.generate(6, (_) => TextEditingController());
-  final nodes = List.generate(6, (_) => FocusNode());
+class _OtpScreenState extends State<OtpScreen> with TickerProviderStateMixin {
+  final codeController = TextEditingController();
+  final inputNode = FocusNode();
   late final AnimationController shakeController;
   late final Animation<double> shakeAnimation;
+  late final AnimationController successController;
   Timer? timer;
   int seconds = 60;
   bool busy = false;
@@ -629,6 +642,10 @@ class _OtpScreenState extends State<OtpScreen>
       vsync: this,
       duration: const Duration(milliseconds: 360),
     );
+    successController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
     shakeAnimation =
         TweenSequence<double>([
           TweenSequenceItem(tween: Tween(begin: 0, end: -10), weight: 1),
@@ -639,23 +656,21 @@ class _OtpScreenState extends State<OtpScreen>
         ]).animate(
           CurvedAnimation(parent: shakeController, curve: Curves.easeInOut),
         );
-    for (final node in nodes) {
-      node.addListener(_focusChanged);
-    }
+    inputNode.addListener(_focusChanged);
     _startTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) inputNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     timer?.cancel();
     shakeController.dispose();
-    for (final controller in controllers) {
-      controller.dispose();
-    }
-    for (final node in nodes) {
-      node.removeListener(_focusChanged);
-      node.dispose();
-    }
+    successController.dispose();
+    codeController.dispose();
+    inputNode.removeListener(_focusChanged);
+    inputNode.dispose();
     super.dispose();
   }
 
@@ -696,7 +711,30 @@ class _OtpScreenState extends State<OtpScreen>
                   opacity: animation,
                   child: SizeTransition(sizeFactor: animation, child: child),
                 ),
-                child: error == null
+                child: verified
+                    ? const Padding(
+                        key: ValueKey('otp-success'),
+                        padding: EdgeInsets.only(top: 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: AppColors.success,
+                              size: 20,
+                            ),
+                            SizedBox(width: 7),
+                            Text(
+                              'Code verified',
+                              style: TextStyle(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : error == null
                     ? const SizedBox.shrink(key: ValueKey('otp-no-error'))
                     : Padding(
                         key: ValueKey(error),
@@ -782,110 +820,150 @@ class _OtpScreenState extends State<OtpScreen>
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return AnimatedBuilder(
-      animation: shakeAnimation,
-      builder: (context, child) => Transform.translate(
-        offset: Offset(reduceMotion ? 0 : shakeAnimation.value, 0),
-        child: child,
-      ),
-      child: Row(
-        children: List.generate(6, (index) {
-          final filled = controllers[index].text.isNotEmpty;
-          final focused = nodes[index].hasFocus;
-          final background = verified
-              ? const Color(0xFFDDF5E8)
-              : error != null
-              ? const Color(0xFFFFE4E0)
-              : filled
-              ? AppColors.yellow.withValues(alpha: 0.34)
-              : const Color(0xFFE9E5E1);
+      animation: Listenable.merge([shakeAnimation, successController]),
+      builder: (context, _) {
+        final code = codeController.text;
+        final progress = reduceMotion ? 0.0 : successController.value;
+        final gather = progress < .52
+            ? progress / .52
+            : (1 - ((progress - .52) / .48)).clamp(0.0, 1.0);
 
-          return Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(right: index == 5 ? 0 : 8),
-              child: AnimatedContainer(
-                duration: reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                transform: Matrix4.diagonal3Values(
-                  filled ? 1.0 : 0.97,
-                  filled ? 1.0 : 0.97,
-                  1,
-                ),
-                decoration: BoxDecoration(
-                  color: background,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: error != null
-                        ? const Color(0xFFEF5350)
-                        : focused
-                        ? AppColors.coral
-                        : Colors.transparent,
-                    width: 1.5,
+        return Transform.translate(
+          offset: Offset(reduceMotion ? 0 : shakeAnimation.value, 0),
+          child: Stack(
+            children: [
+              Row(
+                children: List.generate(6, (index) {
+                  final filled = index < code.length;
+                  final focused = inputNode.hasFocus && index == code.length;
+                  final background = verified
+                      ? const Color(0xFFDDF5E8)
+                      : error != null
+                      ? const Color(0xFFFFE4E0)
+                      : filled
+                      ? AppColors.yellow.withValues(alpha: 0.42)
+                      : const Color(0xFFE9E5E1);
+                  final centerDirection = 2.5 - index;
+
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: index == 5 ? 0 : 8),
+                      child: Transform.translate(
+                        offset: Offset(centerDirection * 8 * gather, 0),
+                        child: AnimatedScale(
+                          duration: reduceMotion
+                              ? Duration.zero
+                              : const Duration(milliseconds: 220),
+                          curve: Curves.easeOutBack,
+                          scale: verified ? 1.04 : (filled ? 1 : .97),
+                          child: AnimatedContainer(
+                            key: ValueKey('otp-box-$index'),
+                            duration: reduceMotion
+                                ? Duration.zero
+                                : const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            decoration: BoxDecoration(
+                              color: background,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: error != null
+                                    ? const Color(0xFFEF5350)
+                                    : verified
+                                    ? AppColors.success
+                                    : focused
+                                    ? AppColors.coral
+                                    : Colors.transparent,
+                                width: 1.5,
+                              ),
+                              boxShadow: verified
+                                  ? const [
+                                      BoxShadow(
+                                        color: Color(0x26087F5B),
+                                        blurRadius: 14,
+                                        offset: Offset(0, 5),
+                                      ),
+                                    ]
+                                  : const [],
+                            ),
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            child: AnimatedSwitcher(
+                              duration: reduceMotion
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 160),
+                              transitionBuilder: (child, animation) =>
+                                  ScaleTransition(
+                                    scale: CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutBack,
+                                    ),
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  ),
+                              child: Text(
+                                filled ? code[index] : '',
+                                key: ValueKey(filled ? code[index] : '-$index'),
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              Positioned.fill(
+                child: Opacity(
+                  opacity: .01,
+                  child: TextField(
+                    key: const ValueKey('otp-input'),
+                    controller: codeController,
+                    focusNode: inputNode,
+                    autofocus: true,
+                    readOnly: busy || verified,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.oneTimeCode],
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    maxLength: 6,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
+                    showCursor: false,
+                    style: const TextStyle(color: Colors.transparent),
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                    ),
+                    onChanged: _codeChanged,
+                    onSubmitted: (_) => _verify(),
                   ),
-                ),
-                child: TextField(
-                  controller: controllers[index],
-                  focusNode: nodes[index],
-                  readOnly: busy || verified,
-                  keyboardType: TextInputType.number,
-                  textInputAction: index == 5
-                      ? TextInputAction.done
-                      : TextInputAction.next,
-                  autofillHints: index == 0
-                      ? const [AutofillHints.oneTimeCode]
-                      : null,
-                  enableSuggestions: false,
-                  textAlign: TextAlign.center,
-                  maxLength: 1,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  decoration: const InputDecoration(
-                    counterText: '',
-                    errorText: null,
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 18),
-                  ),
-                  onChanged: (value) => _digitChanged(index, value),
                 ),
               ),
-            ),
-          );
-        }),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  void _digitChanged(int index, String value) {
-    final digit = value
-        .replaceAll(RegExp(r'\D'), '')
-        .characters
-        .take(1)
-        .toString();
-    if (controllers[index].text != digit) {
-      controllers[index].value = TextEditingValue(
-        text: digit,
-        selection: TextSelection.collapsed(offset: digit.length),
-      );
-    }
-
+  void _codeChanged(String value) {
     setState(() {
       error = null;
       lastSubmittedCode = null;
     });
-
-    if (digit.isNotEmpty && index < 5) {
-      nodes[index + 1].requestFocus();
-    } else if (digit.isEmpty && index > 0) {
-      nodes[index - 1].requestFocus();
-    }
-
-    final code = controllers.map((controller) => controller.text).join();
+    final code = codeController.text;
     if (code.length == 6 && !busy && !verified) {
       FocusScope.of(context).unfocus();
       unawaited(_verify());
@@ -903,14 +981,20 @@ class _OtpScreenState extends State<OtpScreen>
       error = message;
       lastSubmittedCode = null;
     });
+    successController.reset();
     if (!MediaQuery.disableAnimationsOf(context)) {
       shakeController.forward(from: 0);
     }
+    inputNode.requestFocus();
+    codeController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: codeController.text.length,
+    );
   }
 
   Future<void> _verify() async {
     if (busy || verified) return;
-    final code = controllers.map((c) => c.text).join();
+    final code = codeController.text;
     if (code.length != 6) {
       _showOtpError('Enter all 6 digits.');
       return;
@@ -929,7 +1013,7 @@ class _OtpScreenState extends State<OtpScreen>
         verified = true;
       });
       if (!MediaQuery.disableAnimationsOf(context)) {
-        await Future<void>.delayed(const Duration(milliseconds: 220));
+        await successController.forward(from: 0);
       }
       if (mounted) Navigator.pop(context, response);
     } catch (value) {
@@ -948,10 +1032,9 @@ class _OtpScreenState extends State<OtpScreen>
     });
     try {
       await widget.onResend?.call();
-      for (final controller in controllers) {
-        controller.clear();
-      }
-      nodes.first.requestFocus();
+      codeController.clear();
+      successController.reset();
+      inputNode.requestFocus();
       _startTimer();
     } catch (value) {
       if (mounted) {

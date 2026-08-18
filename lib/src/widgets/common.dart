@@ -13,7 +13,7 @@ class BrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'SLKT',
+    label: 'TKTS APP',
     image: true,
     child: ColorFiltered(
       colorFilter: ColorFilter.mode(
@@ -21,9 +21,9 @@ class BrandMark extends StatelessWidget {
         BlendMode.srcIn,
       ),
       child: Image.asset(
-        'assets/brand/slkt-wordmark-transparent.png',
+        'assets/brand/tkts-wordmark-transparent.png',
         height: height,
-        width: height * 2.04,
+        width: height * 1.48,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),

@@ -306,7 +306,7 @@ class _QuickSummary extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'YOUR SLKT',
+          'YOUR TKTS APP',
           style: TextStyle(
             color: Colors.white60,
             fontSize: 11,
@@ -651,9 +651,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               expandedHeight: 355,
               pinned: true,
               stretch: true,
-              backgroundColor: AppColors.black,
+              backgroundColor: Colors.transparent,
               foregroundColor: Colors.white,
               surfaceTintColor: Colors.transparent,
+              forceMaterialTransparency: true,
+              systemOverlayStyle: AppSystemUi.light,
               leading: Padding(
                 padding: const EdgeInsets.all(8),
                 child: IconButton.filled(
@@ -1016,14 +1018,16 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             Text(
               paid
                   ? '${result.orderNumber} is paid. Your tickets are now available in the Ticket wallet.'
-                  : '${result.orderNumber} is saved in Orders. SLKT will update it automatically when Paymob confirms the payment.',
+                  : '${result.orderNumber} is saved in Orders. TKTS APP will update it automatically when Paymob confirms the payment.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.muted, height: 1.5),
             ),
             const SizedBox(height: 22),
             FilledButton(
               onPressed: () => Navigator.pop(sheetContext),
-              child: Text(paid ? 'Continue in SLKT' : 'View status in Orders'),
+              child: Text(
+                paid ? 'Continue in TKTS APP' : 'View status in Orders',
+              ),
             ),
           ],
         ),
@@ -1296,7 +1300,7 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                                           children: [
                                             Text(
                                               item['title']?.toString() ??
-                                                  'SLKT update',
+                                                  'TKTS APP update',
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w800,
                                               ),
@@ -1824,7 +1828,7 @@ class _TransferSheetState extends State<TransferSheet> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'The recipient must already have a SLKT account. After acceptance, your old QR is cancelled and a new one is issued.',
+              'The recipient must already have a TKTS APP account. After acceptance, your old QR is cancelled and a new one is issued.',
               style: TextStyle(color: AppColors.muted, height: 1.5),
             ),
             const SizedBox(height: 20),
@@ -1913,7 +1917,7 @@ class _TransferSheetState extends State<TransferSheet> {
                     preview!['contact']?.toString() ??
                         preview!['masked_phone']?.toString() ??
                         preview!['phone']?.toString() ??
-                        'Verified SLKT account',
+                        'Verified TKTS APP account',
                   ),
                   trailing: const Icon(
                     Icons.verified_rounded,
@@ -2057,8 +2061,8 @@ class _TransferCardState extends State<TransferCard> {
               const SizedBox(height: 8),
               Text(
                 incoming
-                    ? 'From ${otherParty['name'] ?? 'SLKT buyer'}'
-                    : 'To ${otherParty['name'] ?? 'SLKT buyer'}',
+                    ? 'From ${otherParty['name'] ?? 'TKTS APP buyer'}'
+                    : 'To ${otherParty['name'] ?? 'TKTS APP buyer'}',
                 style: const TextStyle(color: AppColors.muted),
               ),
               if (otherParty['contact'] != null) ...[
@@ -2317,7 +2321,7 @@ class ProfileScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user['name']?.toString() ?? 'SLKT buyer',
+                            user['name']?.toString() ?? 'TKTS APP buyer',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 19,
@@ -2387,7 +2391,7 @@ class ProfileScreen extends StatelessWidget {
             const ProfileTile(
               icon: Icons.support_agent_rounded,
               title: 'Help & support',
-              subtitle: 'Contact the SLKT team',
+              subtitle: 'Contact the TKTS APP team',
             ),
             ProfileTile(
               onTap: () => _changePassword(context),

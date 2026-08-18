@@ -1,6 +1,6 @@
 workflows:
   android-release:
-    name: SLKT Android APK & AAB
+    name: TKTS APP Android APK & AAB
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
@@ -31,7 +31,7 @@ workflows:
       - flutter_drive.log
 
   ios-release:
-    name: SLKT iOS IPA
+    name: TKTS APP iOS IPA
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:

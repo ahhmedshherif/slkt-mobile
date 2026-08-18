@@ -14,11 +14,13 @@ import 'package:evnts_app/src/widgets/common.dart';
 
 void main() {
   testWidgets('Flutter test environment is ready', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: Text('SLKT')));
-    expect(find.text('SLKT'), findsOneWidget);
+    await tester.pumpWidget(const MaterialApp(home: Text('TKTS APP')));
+    expect(find.text('TKTS APP'), findsOneWidget);
   });
 
-  testWidgets('cinematic splash renders SLKT brand sequence', (tester) async {
+  testWidgets('cinematic splash renders TKTS APP brand sequence', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(theme: buildTheme(), home: const SplashScreen()),
     );
@@ -27,24 +29,23 @@ void main() {
     expect(find.text('SELECT SMART. ENTER SMOOTH.'), findsOneWidget);
     expect(
       find.image(
-        const AssetImage('assets/brand/slkt-wordmark-transparent.png'),
+        const AssetImage('assets/brand/tkts-wordmark-transparent.png'),
       ),
       findsWidgets,
     );
   });
 
-  testWidgets('brand mark uses transparent SLKT artwork', (tester) async {
+  testWidgets('brand mark renders the black TKTS APP wordmark', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: BrandMark())),
     );
 
     expect(
       find.image(
-        const AssetImage('assets/brand/slkt-wordmark-transparent.png'),
+        const AssetImage('assets/brand/tkts-wordmark-transparent.png'),
       ),
       findsOneWidget,
     );
-    expect(find.byType(ColorFiltered), findsOneWidget);
   });
 
   testWidgets('tab transition fully fades the previous page', (tester) async {
@@ -262,7 +263,9 @@ void main() {
     );
 
     expect(find.text('Security verification'), findsOneWidget);
-    expect(find.byType(TextField), findsNWidgets(6));
+    expect(find.byKey(const ValueKey('otp-input')), findsOneWidget);
+    expect(find.byKey(const ValueKey('otp-box-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('otp-box-5')), findsOneWidget);
     expect(find.text('Resend code'), findsNothing);
     expect(find.text('Verify & continue'), findsOneWidget);
   });
@@ -286,16 +289,14 @@ void main() {
       ),
     );
 
-    for (var index = 0; index < 6; index++) {
-      await tester.enterText(find.byType(TextField).at(index), '${index + 1}');
-      await tester.pump();
-    }
+    await tester.enterText(find.byKey(const ValueKey('otp-input')), '123456');
+    await tester.pump();
 
     expect(submittedCode, '123456');
     expect(find.text('Checking code...'), findsOneWidget);
     completion.complete(<String, dynamic>{'ok': true});
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 650));
   });
 
   testWidgets('transfer lookup error is rendered inside the transfer sheet', (

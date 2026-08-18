@@ -138,7 +138,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         Text(
-                          widget.event['name']?.toString() ?? 'SLKT event',
+                          widget.event['name']?.toString() ?? 'TKTS APP event',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -428,7 +428,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
           orderId == null ||
           expiresAt == null ||
           serverTime == null) {
-        throw const ApiException('SLKT could not start secure payment.');
+        throw const ApiException('TKTS APP could not start secure payment.');
       }
       if (!mounted) return;
       final result = await _showPaymentSheet(
@@ -625,7 +625,10 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
             if (mounted) setState(() => pageFailed = false);
             _inspectUrl(url);
           },
-          onPageFinished: _inspectUrl,
+          onPageFinished: (url) {
+            _inspectUrl(url);
+            unawaited(_installKeyboardVisibilityHelper());
+          },
           onWebResourceError: (_) {
             if (mounted && progress < 20) setState(() => pageFailed = true);
           },
@@ -656,179 +659,217 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => FractionallySizedBox(
-    heightFactor: .96,
-    child: ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: ColoredBox(
-        color: Colors.white,
-        child: Column(
-          children: [
-            Container(
-              color: AppColors.black,
-              padding: const EdgeInsets.fromLTRB(14, 8, 8, 16),
-              child: Column(
-                children: [
-                  Row(
+  Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    return AnimatedPadding(
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 240),
+      curve: const Cubic(0.2, 0, 0, 1),
+      child: FractionallySizedBox(
+        heightFactor: keyboardInset > 0 ? 1 : .96,
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          child: ColoredBox(
+            color: Colors.white,
+            child: Column(
+              children: [
+                Container(
+                  color: AppColors.black,
+                  padding: const EdgeInsets.fromLTRB(14, 8, 8, 16),
+                  child: Column(
                     children: [
-                      const Icon(
-                        Icons.lock_rounded,
-                        color: AppColors.yellow,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Secure payment  ·  ${widget.orderNumber}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close payment',
-                        onPressed: _requestClose,
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 52,
-                        height: 52,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            TweenAnimationBuilder<double>(
-                              tween: Tween<double>(
-                                begin: 0,
-                                end: _progressValue,
-                              ),
-                              duration: MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 240),
-                              builder: (context, value, child) =>
-                                  CircularProgressIndicator(
-                                    value: value,
-                                    strokeWidth: 3.5,
-                                    strokeCap: StrokeCap.round,
-                                    backgroundColor: Colors.white12,
-                                    color: remaining.inSeconds <= 120
-                                        ? const Color(0xFFFF8A65)
-                                        : AppColors.yellow,
-                                  ),
-                            ),
-                            const Icon(
-                              Icons.schedule_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
                         children: [
-                          const Text(
-                            'RESERVATION HELD',
-                            style: TextStyle(
-                              color: Colors.white54,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.8,
+                          const Icon(
+                            Icons.lock_rounded,
+                            color: AppColors.yellow,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Secure payment  ·  ${widget.orderNumber}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
-                          AnimatedSwitcher(
-                            duration: MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : const Duration(milliseconds: 180),
-                            transitionBuilder: (child, animation) =>
-                                FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween(
-                                      begin: const Offset(0, .12),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
+                          IconButton(
+                            tooltip: 'Close payment',
+                            onPressed: _requestClose,
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 52,
+                            height: 52,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                TweenAnimationBuilder<double>(
+                                  tween: Tween<double>(
+                                    begin: 0,
+                                    end: _progressValue,
+                                  ),
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 240),
+                                  builder: (context, value, child) =>
+                                      CircularProgressIndicator(
+                                        value: value,
+                                        strokeWidth: 3.5,
+                                        strokeCap: StrokeCap.round,
+                                        backgroundColor: Colors.white12,
+                                        color: remaining.inSeconds <= 120
+                                            ? const Color(0xFFFF8A65)
+                                            : AppColors.yellow,
+                                      ),
+                                ),
+                                const Icon(
+                                  Icons.schedule_rounded,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'RESERVATION HELD',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.8,
+                                ),
+                              ),
+                              AnimatedSwitcher(
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 180),
+                                transitionBuilder: (child, animation) =>
+                                    FadeTransition(
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: Tween(
+                                          begin: const Offset(0, .12),
+                                          end: Offset.zero,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
+                                    ),
+                                child: Text(
+                                  _formattedRemaining,
+                                  key: ValueKey(remaining.inSeconds),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 31,
+                                    height: 1.05,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 3,
+                                    fontFeatures: [
+                                      FontFeature.tabularFigures(),
+                                    ],
                                   ),
                                 ),
-                            child: Text(
-                              _formattedRemaining,
-                              key: ValueKey(remaining.inSeconds),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 31,
-                                height: 1.05,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 3,
-                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
-                            ),
-                          ),
-                          const Text(
-                            'Complete payment before time runs out',
-                            style: TextStyle(
-                              color: Colors.white54,
-                              fontSize: 10,
-                            ),
+                              const Text(
+                                'Complete payment before time runs out',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            if (progress < 100)
-              LinearProgressIndicator(value: progress / 100, minHeight: 3),
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(child: WebViewWidget(controller: controller)),
-                  if (pageFailed)
-                    Positioned.fill(
-                      child: ColoredBox(
-                        color: Colors.white,
-                        child: EmptyState(
-                          icon: Icons.wifi_off_rounded,
-                          title: 'Payment page did not load',
-                          message:
-                              'Check your connection, then reload the secure page.',
-                          action: FilledButton.icon(
-                            onPressed: () {
-                              setState(() => pageFailed = false);
-                              controller.reload();
-                            },
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('Reload payment'),
+                ),
+                if (progress < 100)
+                  LinearProgressIndicator(value: progress / 100, minHeight: 3),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: WebViewWidget(controller: controller),
+                      ),
+                      if (pageFailed)
+                        Positioned.fill(
+                          child: ColoredBox(
+                            color: Colors.white,
+                            child: EmptyState(
+                              icon: Icons.wifi_off_rounded,
+                              title: 'Payment page did not load',
+                              message:
+                                  'Check your connection, then reload the secure page.',
+                              action: FilledButton.icon(
+                                onPressed: () {
+                                  setState(() => pageFailed = false);
+                                  controller.reload();
+                                },
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('Reload payment'),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
+                    ],
+                  ),
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 320),
+                  switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
+                  child: _statusPanel(),
+                ),
+              ],
             ),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 320),
-              switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
-              child: _statusPanel(),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
+
+  Future<void> _installKeyboardVisibilityHelper() async {
+    try {
+      await controller.runJavaScript('''
+        (() => {
+          if (window.__tktsKeyboardHelperInstalled) return;
+          window.__tktsKeyboardHelperInstalled = true;
+          document.addEventListener('focusin', (event) => {
+            const target = event.target;
+            if (!target || !['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+            window.setTimeout(() => {
+              target.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'});
+            }, 260);
+          }, true);
+        })();
+      ''');
+    } catch (_) {
+      // Payment remains usable if the provider blocks helper injection.
+    }
+  }
 
   Widget _statusPanel() {
     final status = terminalStatus;

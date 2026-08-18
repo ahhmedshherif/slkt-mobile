@@ -33,7 +33,8 @@ class EvntsApp extends StatefulWidget {
 }
 
 class _EvntsAppState extends State<EvntsApp> {
-  static const currentBuild = 4005;
+  static const currentBuild = 4006;
+  final navigatorKey = GlobalKey<NavigatorState>();
   Timer? timer;
   final AppLinks appLinks = AppLinks();
   StreamSubscription<Uri>? appLinkSubscription;
@@ -95,9 +96,14 @@ class _EvntsAppState extends State<EvntsApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'SLKT',
+    title: 'TKTS APP',
+    navigatorKey: navigatorKey,
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
+    builder: (context, child) => _EdgeSwipeBack(
+      navigatorKey: navigatorKey,
+      child: child ?? const SizedBox.shrink(),
+    ),
     home: AnimatedBuilder(
       animation: widget.session,
       builder: (context, _) {
@@ -201,7 +207,7 @@ class AppUpdateScreen extends StatelessWidget {
                     Text(
                       forced
                           ? 'Critical update required'
-                          : 'A smarter SLKT is ready',
+                          : 'A smarter TKTS APP is ready',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 25,
@@ -265,6 +271,109 @@ class AppUpdateScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _EdgeSwipeBack extends StatefulWidget {
+  const _EdgeSwipeBack({required this.navigatorKey, required this.child});
+
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Widget child;
+
+  @override
+  State<_EdgeSwipeBack> createState() => _EdgeSwipeBackState();
+}
+
+class _EdgeSwipeBackState extends State<_EdgeSwipeBack> {
+  double dragDistance = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final progress = (dragDistance / 72).clamp(0.0, 1.0);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        Positioned(
+          left: 0,
+          top: MediaQuery.paddingOf(context).top + 64,
+          bottom: MediaQuery.paddingOf(context).bottom + 64,
+          width: 28,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.centerLeft,
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (_) {
+                    if (widget.navigatorKey.currentState?.canPop() ?? false) {
+                      setState(() => dragDistance = 1);
+                    }
+                  },
+                  onHorizontalDragUpdate: (details) {
+                    if (dragDistance == 0 || details.delta.dx <= 0) return;
+                    setState(() {
+                      dragDistance = (dragDistance + details.delta.dx).clamp(
+                        0,
+                        104,
+                      );
+                    });
+                  },
+                  onHorizontalDragEnd: (details) {
+                    final shouldPop =
+                        dragDistance >= 64 ||
+                        details.primaryVelocity != null &&
+                            details.primaryVelocity! > 650;
+                    setState(() => dragDistance = 0);
+                    if (shouldPop) widget.navigatorKey.currentState?.maybePop();
+                  },
+                  onHorizontalDragCancel: () =>
+                      setState(() => dragDistance = 0),
+                ),
+              ),
+              if (dragDistance > 0)
+                IgnorePointer(
+                  child: Transform.translate(
+                    offset: Offset(8 + 28 * progress, 0),
+                    child: AnimatedScale(
+                      scale: .82 + .18 * progress,
+                      duration: reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 90),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppColors.black.withValues(
+                            alpha: .72 + .2 * progress,
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x33000000),
+                              blurRadius: 18,
+                              offset: Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.arrow_back_rounded,
+                          color: progress >= .88
+                              ? AppColors.yellow
+                              : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
