@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Login | EvntsApp</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@700;800;900&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "tertiary-fixed-dim": "#5edac7",
+              "surface-variant": "#e5e2de",
+              "surface-tint": "#99462a",
+              "error-container": "#ffdad6",
+              "error": "#ba1a1a",
+              "on-secondary-container": "#5f6474",
+              "secondary-fixed-dim": "#c2c6d8",
+              "on-tertiary-fixed-variant": "#005047",
+              "outline-variant": "#dbc1b9",
+              "on-primary-fixed-variant": "#7a2f15",
+              "tertiary": "#006b5f",
+              "surface-container-lowest": "#ffffff",
+              "surface-container-highest": "#e5e2de",
+              "on-error": "#ffffff",
+              "on-tertiary-container": "#00312b",
+              "inverse-primary": "#ffb59e",
+              "primary-fixed": "#ffdbd0",
+              "on-tertiary": "#ffffff",
+              "on-secondary-fixed-variant": "#424655",
+              "background": "#fcf9f5",
+              "outline": "#88726c",
+              "on-error-container": "#93000a",
+              "secondary-fixed": "#dee2f5",
+              "on-background": "#1c1c19",
+              "surface-dim": "#dcdad6",
+              "surface-container": "#f0ede9",
+              "secondary-container": "#dee2f5",
+              "on-tertiary-fixed": "#00201c",
+              "tertiary-container": "#09a493",
+              "inverse-on-surface": "#f3f0ec",
+              "primary": "#99462a",
+              "on-primary-container": "#541400",
+              "on-surface": "#1c1c19",
+              "on-primary-fixed": "#390b00",
+              "surface-container-low": "#f6f3ef",
+              "on-surface-variant": "#55433d",
+              "on-primary": "#ffffff",
+              "inverse-surface": "#31302e",
+              "on-secondary": "#ffffff",
+              "surface-container-high": "#ebe8e4",
+              "secondary": "#595e6e",
+              "primary-fixed-dim": "#ffb59e",
+              "primary-container": "#d97757",
+              "tertiary-fixed": "#7df7e3",
+              "surface-bright": "#fcf9f5",
+              "surface": "#fcf9f5",
+              "on-secondary-fixed": "#161b29"
+            },
+            fontFamily: {
+              "headline": ["Epilogue"],
+              "body": ["Plus Jakarta Sans"],
+              "label": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .editorial-gradient {
+            background: radial-gradient(circle at top right, #ffdbd0 0%, transparent 40%),
+                        radial-gradient(circle at bottom left, #f6f3ef 0%, transparent 50%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background font-body text-on-background min-h-screen flex flex-col">
+<main class="flex-grow flex flex-col items-center justify-center px-6 relative overflow-hidden editorial-gradient">
+<div class="absolute top-12 left-8">
+<h1 class="text-2xl font-black text-primary tracking-tighter font-headline">EvntsApp</h1>
+</div>
+<div class="w-full max-w-md space-y-12 z-10">
+<div class="space-y-4">
+<h2 class="text-4xl md:text-5xl font-extrabold font-headline tracking-tight text-on-secondary-fixed">
+                    Welcome <br/>Back.
+                </h2>
+<p class="text-body-lg text-on-surface-variant max-w-[280px] leading-relaxed">
+                    Enter your phone number to receive a secure access code.
+                </p>
+</div>
+<div class="space-y-8">
+<div class="space-y-3">
+<label class="block text-label-md font-bold uppercase tracking-widest text-on-surface-variant ml-2">Mobile Number</label>
+<div class="relative group">
+<div class="absolute inset-y-0 left-0 flex items-center pl-6 pointer-events-none">
+<span class="text-primary font-bold text-lg">+20</span>
+<div class="h-6 w-[1px] bg-outline-variant/30 mx-4"></div>
+</div>
+<input class="w-full bg-surface-container-high border-none rounded-xl py-6 pl-28 pr-6 text-xl font-bold text-on-secondary-fixed focus:ring-2 focus:ring-primary-container transition-all placeholder:text-outline-variant/60 shadow-sm" placeholder="10 1234 5678" type="tel"/>
+</div>
+<div class="flex items-start gap-2 px-2 py-1">
+<span class="material-symbols-outlined text-primary text-sm mt-0.5">verified_user</span>
+<p class="text-sm text-on-surface-variant/80">
+                            We'll send a 6-digit verification code to this number.
+                        </p>
+</div>
+</div>
+<button class="w-full bg-primary-container text-on-primary-container font-headline font-bold py-6 rounded-full text-lg shadow-[0_20px_40px_-10px_rgba(217,119,87,0.3)] active:scale-95 transition-all duration-200">
+                    Send Code
+                </button>
+</div>
+<div class="pt-8 border-t border-outline-variant/10">
+<div class="bg-surface-container-low p-6 rounded-xl flex items-center gap-4">
+<div class="bg-primary/10 p-3 rounded-full">
+<span class="material-symbols-outlined text-primary">security</span>
+</div>
+<div>
+<p class="text-sm font-bold text-on-secondary-fixed">Secure Login</p>
+<p class="text-xs text-on-surface-variant">Your data is encrypted and protected by industry standards.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-auto py-12 w-full max-w-md">
+<div class="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-on-surface-variant/60">
+<a class="hover:text-primary transition-colors" href="#">Privacy Policy</a>
+<a class="hover:text-primary transition-colors" href="#">Terms of Service</a>
+<a class="hover:text-primary transition-colors" href="#">Help Center</a>
+</div>
+<p class="text-center mt-6 text-xs text-outline font-medium tracking-wide">
+                © 2024 EvntsApp Egypt. All rights reserved.
+            </p>
+</div>
+<div class="absolute -bottom-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl opacity-50"></div>
+<div class="absolute top-1/4 -left-32 w-64 h-64 bg-tertiary/5 rounded-full blur-3xl opacity-30"></div>
+</main>
+<footer class="bg-on-secondary-fixed py-8 px-6 text-center md:hidden">
+<p class="text-slate-400 text-xs font-medium">Trusted by 50,000+ event goers in Cairo &amp; Alexandria</p>
+</footer>
+</body></html>

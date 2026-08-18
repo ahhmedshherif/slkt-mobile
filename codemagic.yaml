@@ -1,0 +1,69 @@
+workflows:
+  android-release:
+    name: SLKT Android APK & AAB
+    max_build_duration: 60
+    instance_type: linux_x2
+    environment:
+      flutter: stable
+      vars:
+        API_BASE_URL: "https://slktegy.com/api/v1"
+    cache:
+      cache_paths:
+        - "$FLUTTER_ROOT/.pub-cache"
+        - "$HOME/.gradle/caches"
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Analyze project
+        script: flutter analyze
+      - name: Run tests
+        script: flutter test
+      - name: Build release APK and AAB
+        script: |
+          flutter build apk --release \
+            --dart-define=API_BASE_URL="$API_BASE_URL"
+          flutter build appbundle --release \
+            --dart-define=API_BASE_URL="$API_BASE_URL"
+    artifacts:
+      - build/**/outputs/**/*.apk
+      - build/**/outputs/**/*.aab
+      - build/**/outputs/**/mapping.txt
+      - flutter_drive.log
+
+  ios-release:
+    name: SLKT iOS IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.slktegy.evntsApp
+      vars:
+        API_BASE_URL: "https://slktegy.com/api/v1"
+    cache:
+      cache_paths:
+        - "$FLUTTER_ROOT/.pub-cache"
+        - "$HOME/Library/Caches/CocoaPods"
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Configure iOS signing
+        script: xcode-project use-profiles
+      - name: Analyze project
+        script: flutter analyze
+      - name: Run tests
+        script: flutter test
+      - name: Build signed IPA
+        script: |
+          flutter build ipa --release \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log

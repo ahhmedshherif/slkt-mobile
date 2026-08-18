@@ -1,0 +1,1102 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+import '../../core/api_client.dart';
+import '../../core/theme.dart';
+import '../../widgets/common.dart';
+
+enum CheckoutPaymentStatus { paid, pending, failed }
+
+class CheckoutCompletion {
+  const CheckoutCompletion({
+    required this.status,
+    required this.orderId,
+    required this.orderNumber,
+  });
+
+  final CheckoutPaymentStatus status;
+  final int orderId;
+  final String orderNumber;
+}
+
+Future<CheckoutCompletion?> showCheckoutCartSheet({
+  required BuildContext context,
+  required ApiClient api,
+  required Map<String, dynamic> event,
+  int? initialTicketTypeId,
+}) => showModalBottomSheet<CheckoutCompletion>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  showDragHandle: false,
+  backgroundColor: Colors.transparent,
+  builder: (_) => _CheckoutCartSheet(
+    api: api,
+    event: event,
+    initialTicketTypeId: initialTicketTypeId,
+  ),
+);
+
+class _CheckoutCartSheet extends StatefulWidget {
+  const _CheckoutCartSheet({
+    required this.api,
+    required this.event,
+    this.initialTicketTypeId,
+  });
+
+  final ApiClient api;
+  final Map<String, dynamic> event;
+  final int? initialTicketTypeId;
+
+  @override
+  State<_CheckoutCartSheet> createState() => _CheckoutCartSheetState();
+}
+
+class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
+  final promo = TextEditingController();
+  final quantities = <int, int>{};
+  Map<String, dynamic>? preview;
+  Timer? previewDebounce;
+  bool previewBusy = false;
+  bool checkoutBusy = false;
+  String? error;
+  int previewSequence = 0;
+
+  List<Map<String, dynamic>> get types =>
+      (widget.event['ticket_types'] as List? ?? const [])
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .toList();
+
+  int get maxTickets =>
+      ((widget.event['max_tickets_per_order'] as num?)?.toInt() ?? 5).clamp(
+        1,
+        5,
+      );
+
+  int get ticketCount => quantities.values.fold(0, (sum, value) => sum + value);
+
+  double get localTotal => types.fold(0, (sum, type) {
+    final id = (type['id'] as num).toInt();
+    return sum + (_unitPrice(type) * (quantities[id] ?? 0));
+  });
+
+  String get currency => widget.event['currency']?.toString() ?? 'EGP';
+
+  @override
+  void initState() {
+    super.initState();
+    final selected = widget.initialTicketTypeId;
+    if (selected != null) quantities[selected] = 1;
+    if (quantities.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreview());
+    }
+  }
+
+  @override
+  void dispose() {
+    previewDebounce?.cancel();
+    promo.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = (preview?['total'] as num?)?.toDouble() ?? localTotal;
+    return FractionallySizedBox(
+      heightFactor: .94,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: AppColors.canvas,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.yellow,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: const Icon(Icons.shopping_bag_rounded),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Choose your tickets',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        Text(
+                          widget.event['name']?.toString() ?? 'SLKT event',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close cart',
+                    onPressed: checkoutBusy
+                        ? null
+                        : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                children: [
+                  Text(
+                    'TICKET TYPES',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      letterSpacing: 1.8,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...types.map(_ticketRow),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: promo,
+                    textCapitalization: TextCapitalization.characters,
+                    enabled: !checkoutBusy,
+                    decoration: InputDecoration(
+                      labelText: 'Promo code (optional)',
+                      prefixIcon: const Icon(Icons.sell_outlined),
+                      suffixIcon: TextButton(
+                        onPressed: ticketCount == 0 || previewBusy
+                            ? null
+                            : _loadPreview,
+                        child: const Text('Apply'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
+                    child: _summary(total),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      key: const ValueKey('checkout-error'),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFE6E1),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.error_outline_rounded,
+                            color: Colors.red,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(error!)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                14,
+                20,
+                MediaQuery.paddingOf(context).bottom + 14,
+              ),
+              decoration: const BoxDecoration(
+                color: AppColors.paper,
+                border: Border(top: BorderSide(color: AppColors.line)),
+              ),
+              child: FilledButton(
+                key: const ValueKey('create-order-and-pay'),
+                onPressed: ticketCount == 0 || checkoutBusy ? null : _checkout,
+                child: checkoutBusy
+                    ? const SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.lock_rounded, size: 18),
+                          const SizedBox(width: 8),
+                          Text('Create order & pay ${_money(total)} $currency'),
+                        ],
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _ticketRow(Map<String, dynamic> type) {
+    final id = (type['id'] as num).toInt();
+    final quantity = quantities[id] ?? 0;
+    final available = (type['available'] as num?)?.toInt() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        color: quantity > 0 ? const Color(0xFFFFF6C9) : AppColors.paper,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type['name']?.toString() ?? 'Admission',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${_money(_unitPrice(type))} $currency • $available available',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _QuantityStepper(
+                quantity: quantity,
+                canAdd: available > quantity && ticketCount < maxTickets,
+                enabled: !checkoutBusy,
+                onChanged: (value) => _setQuantity(id, value),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _summary(double total) {
+    if (ticketCount == 0) {
+      return const EmptyState(
+        key: ValueKey('empty-cart'),
+        icon: Icons.add_shopping_cart_rounded,
+        title: 'Your cart is empty',
+        message:
+            'Choose one or more tickets above. You can buy up to 5 per order.',
+      );
+    }
+    final subtotal = (preview?['subtotal'] as num?)?.toDouble() ?? localTotal;
+    final tax = (preview?['tax'] as num?)?.toDouble() ?? 0;
+    final discount = (preview?['discount'] as num?)?.toDouble() ?? 0;
+    return Card(
+      key: ValueKey('summary-$ticketCount-${preview?['total']}'),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            _SummaryLine(
+              label: '$ticketCount ticket${ticketCount == 1 ? '' : 's'}',
+              value: '${_money(subtotal)} $currency',
+            ),
+            if (tax > 0)
+              _SummaryLine(label: 'VAT', value: '${_money(tax)} $currency'),
+            if (discount > 0)
+              _SummaryLine(
+                label: 'Discount',
+                value: '-${_money(discount)} $currency',
+                highlighted: true,
+              ),
+            const Divider(height: 22),
+            _SummaryLine(
+              label: 'Total',
+              value: '${_money(total)} $currency',
+              strong: true,
+            ),
+            if (previewBusy) ...[
+              const SizedBox(height: 12),
+              const LinearProgressIndicator(minHeight: 3),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _setQuantity(int id, int value) {
+    setState(() {
+      error = null;
+      if (value <= 0) {
+        quantities.remove(id);
+      } else {
+        quantities[id] = value;
+      }
+      preview = null;
+    });
+    previewDebounce?.cancel();
+    if (ticketCount > 0) {
+      previewDebounce = Timer(const Duration(milliseconds: 320), _loadPreview);
+    }
+  }
+
+  Map<String, int> get payloadQuantities => {
+    for (final entry in quantities.entries)
+      if (entry.value > 0) entry.key.toString(): entry.value,
+  };
+
+  Future<void> _loadPreview() async {
+    if (ticketCount == 0) return;
+    final sequence = ++previewSequence;
+    setState(() {
+      previewBusy = true;
+      error = null;
+    });
+    try {
+      final response = await widget.api.post(
+        '/mobile/buyer/events/${widget.event['slug']}/checkout/preview',
+        audience: 'buyer',
+        data: {
+          'quantities': payloadQuantities,
+          if (promo.text.trim().isNotEmpty) 'promo_code': promo.text.trim(),
+        },
+      );
+      if (!mounted || sequence != previewSequence) return;
+      setState(
+        () => preview = Map<String, dynamic>.from(response['data'] as Map),
+      );
+    } catch (exception) {
+      if (!mounted || sequence != previewSequence) return;
+      setState(() => error = _message(exception));
+    } finally {
+      if (mounted && sequence == previewSequence) {
+        setState(() => previewBusy = false);
+      }
+    }
+  }
+
+  Future<void> _checkout() async {
+    setState(() {
+      checkoutBusy = true;
+      error = null;
+    });
+    try {
+      final response = await widget.api.post(
+        '/mobile/buyer/events/${widget.event['slug']}/checkout',
+        audience: 'buyer',
+        data: {
+          'quantities': payloadQuantities,
+          if (promo.text.trim().isNotEmpty) 'promo_code': promo.text.trim(),
+          'recipient_details': {},
+          'idempotency_key': const Uuid().v4(),
+        },
+      );
+      final data = Map<String, dynamic>.from(response['data'] as Map);
+      final checkoutUrl = Uri.tryParse(data['checkout_url']?.toString() ?? '');
+      final orderId = (data['order_id'] as num?)?.toInt();
+      final expiresAt = DateTime.tryParse(data['expires_at']?.toString() ?? '');
+      final serverTime = DateTime.tryParse(
+        data['server_time']?.toString() ?? '',
+      );
+      if (checkoutUrl == null ||
+          !isTrustedPaymobCheckoutUrl(checkoutUrl) ||
+          orderId == null ||
+          expiresAt == null ||
+          serverTime == null) {
+        throw const ApiException('SLKT could not start secure payment.');
+      }
+      if (!mounted) return;
+      final result = await _showPaymentSheet(
+        context: context,
+        api: widget.api,
+        checkoutUrl: checkoutUrl,
+        orderId: orderId,
+        orderNumber: data['order_number']?.toString() ?? 'Order #$orderId',
+        redirectPath:
+            data['redirect_path']?.toString() ?? '/checkout/$orderId/success',
+        expiresAt: expiresAt,
+        serverTime: serverTime,
+      );
+      if (!mounted || result == null) return;
+      if (result.status == CheckoutPaymentStatus.failed) {
+        setState(
+          () => error =
+              'Payment was not completed. Your card was not confirmed. You can try again.',
+        );
+        return;
+      }
+      Navigator.pop(context, result);
+    } catch (exception) {
+      if (mounted) setState(() => error = _message(exception));
+    } finally {
+      if (mounted) setState(() => checkoutBusy = false);
+    }
+  }
+}
+
+class _QuantityStepper extends StatelessWidget {
+  const _QuantityStepper({
+    required this.quantity,
+    required this.canAdd,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int quantity;
+  final bool canAdd;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: AppColors.line),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: enabled && quantity > 0
+              ? () => onChanged(quantity - 1)
+              : null,
+          icon: const Icon(Icons.remove_rounded, size: 18),
+        ),
+        SizedBox(
+          width: 22,
+          child: Text(
+            '$quantity',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: enabled && canAdd ? () => onChanged(quantity + 1) : null,
+          icon: const Icon(Icons.add_rounded, size: 18),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SummaryLine extends StatelessWidget {
+  const _SummaryLine({
+    required this.label,
+    required this.value,
+    this.highlighted = false,
+    this.strong = false,
+  });
+
+  final String label;
+  final String value;
+  final bool highlighted;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: highlighted ? AppColors.success : AppColors.ink,
+            fontSize: strong ? 17 : 14,
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<CheckoutCompletion?> _showPaymentSheet({
+  required BuildContext context,
+  required ApiClient api,
+  required Uri checkoutUrl,
+  required int orderId,
+  required String orderNumber,
+  required String redirectPath,
+  required DateTime expiresAt,
+  required DateTime serverTime,
+}) => showModalBottomSheet<CheckoutCompletion>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  enableDrag: false,
+  isDismissible: false,
+  backgroundColor: Colors.transparent,
+  builder: (_) => _PaymentWebViewSheet(
+    api: api,
+    checkoutUrl: checkoutUrl,
+    orderId: orderId,
+    orderNumber: orderNumber,
+    redirectPath: redirectPath,
+    expiresAt: expiresAt,
+    serverTime: serverTime,
+  ),
+);
+
+class _PaymentWebViewSheet extends StatefulWidget {
+  const _PaymentWebViewSheet({
+    required this.api,
+    required this.checkoutUrl,
+    required this.orderId,
+    required this.orderNumber,
+    required this.redirectPath,
+    required this.expiresAt,
+    required this.serverTime,
+  });
+
+  final ApiClient api;
+  final Uri checkoutUrl;
+  final int orderId;
+  final String orderNumber;
+  final String redirectPath;
+  final DateTime expiresAt;
+  final DateTime serverTime;
+
+  @override
+  State<_PaymentWebViewSheet> createState() => _PaymentWebViewSheetState();
+}
+
+class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
+  late final WebViewController controller;
+  Timer? poller;
+  Timer? countdown;
+  late DateTime localDeadline;
+  Duration remaining = const Duration(minutes: 15);
+  int progress = 0;
+  bool checking = false;
+  bool redirectSeen = false;
+  bool pageFailed = false;
+  bool expired = false;
+  CheckoutPaymentStatus? terminalStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncDeadline(widget.expiresAt, widget.serverTime);
+    controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (value) {
+            if (mounted) setState(() => progress = value);
+          },
+          onPageStarted: (url) {
+            if (mounted) setState(() => pageFailed = false);
+            _inspectUrl(url);
+          },
+          onPageFinished: _inspectUrl,
+          onWebResourceError: (_) {
+            if (mounted && progress < 20) setState(() => pageFailed = true);
+          },
+          onNavigationRequest: (request) {
+            final uri = Uri.tryParse(request.url);
+            if (uri != null && !['http', 'https'].contains(uri.scheme)) {
+              unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+              return NavigationDecision.prevent;
+            }
+            _inspectUrl(request.url);
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(widget.checkoutUrl);
+    poller = Timer.periodic(const Duration(seconds: 3), (_) => _checkOrder());
+    countdown = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickCountdown(),
+    );
+  }
+
+  @override
+  void dispose() {
+    poller?.cancel();
+    countdown?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+    heightFactor: .96,
+    child: ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: ColoredBox(
+        color: Colors.white,
+        child: Column(
+          children: [
+            Container(
+              color: AppColors.black,
+              padding: const EdgeInsets.fromLTRB(14, 8, 8, 16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_rounded,
+                        color: AppColors.yellow,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Secure payment  ·  ${widget.orderNumber}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close payment',
+                        onPressed: _requestClose,
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 52,
+                        height: 52,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            TweenAnimationBuilder<double>(
+                              tween: Tween<double>(
+                                begin: 0,
+                                end: _progressValue,
+                              ),
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 240),
+                              builder: (context, value, child) =>
+                                  CircularProgressIndicator(
+                                    value: value,
+                                    strokeWidth: 3.5,
+                                    strokeCap: StrokeCap.round,
+                                    backgroundColor: Colors.white12,
+                                    color: remaining.inSeconds <= 120
+                                        ? const Color(0xFFFF8A65)
+                                        : AppColors.yellow,
+                                  ),
+                            ),
+                            const Icon(
+                              Icons.schedule_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'RESERVATION HELD',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.8,
+                            ),
+                          ),
+                          AnimatedSwitcher(
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 180),
+                            transitionBuilder: (child, animation) =>
+                                FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween(
+                                      begin: const Offset(0, .12),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                ),
+                            child: Text(
+                              _formattedRemaining,
+                              key: ValueKey(remaining.inSeconds),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 31,
+                                height: 1.05,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 3,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+                          const Text(
+                            'Complete payment before time runs out',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (progress < 100)
+              LinearProgressIndicator(value: progress / 100, minHeight: 3),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(child: WebViewWidget(controller: controller)),
+                  if (pageFailed)
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: Colors.white,
+                        child: EmptyState(
+                          icon: Icons.wifi_off_rounded,
+                          title: 'Payment page did not load',
+                          message:
+                              'Check your connection, then reload the secure page.',
+                          action: FilledButton.icon(
+                            onPressed: () {
+                              setState(() => pageFailed = false);
+                              controller.reload();
+                            },
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Reload payment'),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 320),
+              switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
+              child: _statusPanel(),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _statusPanel() {
+    final status = terminalStatus;
+    if (status == CheckoutPaymentStatus.paid) {
+      return const _PaymentNotice(
+        key: ValueKey('payment-paid'),
+        color: Color(0xFFE1F7EE),
+        icon: Icons.verified_rounded,
+        iconColor: AppColors.success,
+        title: 'Payment confirmed',
+        message: 'Your tickets are ready in the wallet.',
+      );
+    }
+    if (status == CheckoutPaymentStatus.failed) {
+      return _PaymentNotice(
+        key: const ValueKey('payment-failed'),
+        color: const Color(0xFFFFE6E1),
+        icon: Icons.cancel_rounded,
+        iconColor: Colors.red,
+        title: expired ? 'Reservation expired' : 'Payment not completed',
+        message: expired
+            ? 'The 15-minute hold was released so the tickets can be booked again.'
+            : 'No confirmed payment was found for this order.',
+        action: TextButton(
+          onPressed: () => Navigator.pop(
+            context,
+            CheckoutCompletion(
+              status: CheckoutPaymentStatus.failed,
+              orderId: widget.orderId,
+              orderNumber: widget.orderNumber,
+            ),
+          ),
+          child: const Text('Return to cart'),
+        ),
+      );
+    }
+    if (redirectSeen || checking) {
+      return const _PaymentNotice(
+        key: ValueKey('payment-checking'),
+        color: Color(0xFFFFF6C9),
+        icon: Icons.sync_rounded,
+        iconColor: AppColors.coralDark,
+        title: 'Confirming payment',
+        message: 'Waiting for the secure confirmation from Paymob…',
+        loading: true,
+      );
+    }
+    return const SizedBox.shrink(key: ValueKey('payment-active'));
+  }
+
+  void _inspectUrl(String value) {
+    if (!isCheckoutReturnUrl(value, widget.redirectPath)) return;
+    if (mounted) setState(() => redirectSeen = true);
+    unawaited(_checkOrder());
+  }
+
+  Future<void> _checkOrder() async {
+    if (checking || terminalStatus != null || !mounted) return;
+    setState(() => checking = true);
+    try {
+      final response = await widget.api.get(
+        '/mobile/buyer/orders/${widget.orderId}',
+        audience: 'buyer',
+      );
+      final status = response['data']?['status']?.toString().toLowerCase();
+      final expiresAt = DateTime.tryParse(
+        response['data']?['checkout_expires_at']?.toString() ?? '',
+      );
+      final serverTime = DateTime.tryParse(
+        response['data']?['server_time']?.toString() ?? '',
+      );
+      if (expiresAt != null && serverTime != null) {
+        _syncDeadline(expiresAt, serverTime);
+      }
+      if (!mounted) return;
+      if (status == 'paid') {
+        poller?.cancel();
+        countdown?.cancel();
+        setState(() => terminalStatus = CheckoutPaymentStatus.paid);
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        if (mounted) {
+          Navigator.pop(
+            context,
+            CheckoutCompletion(
+              status: CheckoutPaymentStatus.paid,
+              orderId: widget.orderId,
+              orderNumber: widget.orderNumber,
+            ),
+          );
+        }
+      } else if (['failed', 'cancelled', 'refunded'].contains(status)) {
+        poller?.cancel();
+        countdown?.cancel();
+        setState(() => terminalStatus = CheckoutPaymentStatus.failed);
+      } else if (['expired', 'payment_review'].contains(status)) {
+        poller?.cancel();
+        countdown?.cancel();
+        setState(() {
+          expired = status == 'expired';
+          terminalStatus = CheckoutPaymentStatus.failed;
+        });
+      }
+    } catch (_) {
+      // A temporary polling error must not interrupt an active payment page.
+    } finally {
+      if (mounted) setState(() => checking = false);
+    }
+  }
+
+  double get _progressValue =>
+      (remaining.inMilliseconds / const Duration(minutes: 15).inMilliseconds)
+          .clamp(0.0, 1.0);
+
+  String get _formattedRemaining {
+    final seconds = remaining.inSeconds.clamp(0, 15 * 60);
+    final minutesPart = seconds ~/ 60;
+    final secondsPart = seconds % 60;
+    return '${minutesPart.toString().padLeft(2, '0')}:${secondsPart.toString().padLeft(2, '0')}';
+  }
+
+  void _syncDeadline(DateTime expiresAt, DateTime serverTime) {
+    final serverRemaining = expiresAt.toUtc().difference(serverTime.toUtc());
+    localDeadline = DateTime.now().add(
+      serverRemaining.isNegative ? Duration.zero : serverRemaining,
+    );
+    remaining = localDeadline.difference(DateTime.now());
+    if (remaining.isNegative) remaining = Duration.zero;
+  }
+
+  void _tickCountdown() {
+    if (!mounted || terminalStatus != null) return;
+    final next = localDeadline.difference(DateTime.now());
+    setState(() => remaining = next.isNegative ? Duration.zero : next);
+    if (remaining == Duration.zero) {
+      countdown?.cancel();
+      unawaited(_checkOrder());
+    }
+  }
+
+  Future<void> _requestClose() async {
+    await _checkOrder();
+    if (!mounted) return;
+    if (terminalStatus == CheckoutPaymentStatus.paid) return;
+    if (terminalStatus == CheckoutPaymentStatus.failed) {
+      Navigator.pop(
+        context,
+        CheckoutCompletion(
+          status: CheckoutPaymentStatus.failed,
+          orderId: widget.orderId,
+          orderNumber: widget.orderNumber,
+        ),
+      );
+      return;
+    }
+    final close = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave secure payment?'),
+        content: const Text(
+          'If you already paid, confirmation may still arrive. The order will stay visible in Orders.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep paying'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Leave payment'),
+          ),
+        ],
+      ),
+    );
+    if (close == true && mounted) {
+      Navigator.pop(
+        context,
+        CheckoutCompletion(
+          status: CheckoutPaymentStatus.pending,
+          orderId: widget.orderId,
+          orderNumber: widget.orderNumber,
+        ),
+      );
+    }
+  }
+}
+
+class _PaymentNotice extends StatelessWidget {
+  const _PaymentNotice({
+    super.key,
+    required this.color,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.message,
+    this.loading = false,
+    this.action,
+  });
+
+  final Color color;
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String message;
+  final bool loading;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    color: color,
+    padding: EdgeInsets.fromLTRB(
+      18,
+      12,
+      18,
+      MediaQuery.paddingOf(context).bottom + 12,
+    ),
+    child: Row(
+      children: [
+        loading
+            ? const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              )
+            : Icon(icon, color: iconColor, size: 26),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text(
+                message,
+                style: const TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ),
+        ?action,
+      ],
+    ),
+  );
+}
+
+double _unitPrice(Map<String, dynamic> type) =>
+    (type['early_bird_price'] as num?)?.toDouble() ??
+    (type['price'] as num?)?.toDouble() ??
+    0;
+
+String _money(double value) => value == value.roundToDouble()
+    ? value.toStringAsFixed(0)
+    : value.toStringAsFixed(2);
+
+String _message(Object exception) => exception is ApiException
+    ? exception.message
+    : 'Something went wrong. Please try again.';
+
+bool isTrustedPaymobCheckoutUrl(Uri uri) {
+  final host = uri.host.toLowerCase();
+  final trustedHost = host == 'paymob.com' || host.endsWith('.paymob.com');
+  return uri.scheme == 'https' &&
+      trustedHost &&
+      uri.path.toLowerCase().contains('unifiedcheckout');
+}
+
+bool isCheckoutReturnUrl(String value, String redirectPath) {
+  final uri = Uri.tryParse(value);
+  if (uri == null || uri.scheme != 'https') return false;
+  final trustedHost =
+      uri.host == 'slktegy.com' || uri.host.endsWith('.slktegy.com');
+  return trustedHost && uri.path == redirectPath;
+}

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>EvntsApp | My Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@700;800;900&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-tertiary": "#ffffff",
+              "on-primary-container": "#541400",
+              "on-primary": "#ffffff",
+              "on-surface-variant": "#55433d",
+              "background": "#fcf9f5",
+              "on-primary-fixed-variant": "#7a2f15",
+              "surface": "#fcf9f5",
+              "surface-dim": "#dcdad6",
+              "primary-fixed": "#ffdbd0",
+              "on-secondary-container": "#5f6474",
+              "tertiary-fixed-dim": "#5edac7",
+              "outline": "#88726c",
+              "surface-container-low": "#f6f3ef",
+              "primary": "#99462a",
+              "on-background": "#1c1c19",
+              "secondary-container": "#dee2f5",
+              "surface-container-highest": "#e5e2de",
+              "inverse-primary": "#ffb59e",
+              "tertiary-fixed": "#7df7e3",
+              "inverse-surface": "#31302e",
+              "surface-container-lowest": "#ffffff",
+              "inverse-on-surface": "#f3f0ec",
+              "primary-fixed-dim": "#ffb59e",
+              "on-secondary": "#ffffff",
+              "outline-variant": "#dbc1b9",
+              "surface-tint": "#99462a",
+              "on-tertiary-container": "#00312b",
+              "on-error": "#ffffff",
+              "surface-container": "#f0ede9",
+              "tertiary-container": "#09a493",
+              "on-primary-fixed": "#390b00",
+              "on-error-container": "#93000a",
+              "error": "#ba1a1a",
+              "secondary-fixed": "#dee2f5",
+              "surface-bright": "#fcf9f5",
+              "secondary": "#595e6e",
+              "on-tertiary-fixed": "#00201c",
+              "surface-variant": "#e5e2de",
+              "on-secondary-fixed": "#161b29",
+              "on-tertiary-fixed-variant": "#005047",
+              "on-surface": "#1c1c19",
+              "secondary-fixed-dim": "#c2c6d8",
+              "primary-container": "#d97757",
+              "tertiary": "#006b5f",
+              "error-container": "#ffdad6",
+              "surface-container-high": "#ebe8e4",
+              "on-secondary-fixed-variant": "#424655"
+            },
+            fontFamily: {
+              "headline": ["Epilogue"],
+              "body": ["Plus Jakarta Sans"],
+              "label": ["Plus Jakarta Sans"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-mesh {
+            background-color: #fcf9f5;
+            background-image: radial-gradient(at 0% 0%, rgba(217, 119, 87, 0.05) 0px, transparent 50%),
+                              radial-gradient(at 100% 0%, rgba(153, 70, 42, 0.03) 0px, transparent 50%);
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-mesh font-body text-on-surface min-h-screen pb-32">
+<!-- TopNavBar -->
+<header class="bg-surface/70 backdrop-blur-xl shadow-[0_48px_48px_-12px_rgba(153,70,42,0.04)] fixed top-0 w-full z-50">
+<div class="flex justify-between items-center w-full px-8 py-4 max-w-7xl mx-auto">
+<span class="text-2xl font-black text-primary tracking-tighter font-headline">EvntsApp</span>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary active:scale-95 duration-200">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary-container/20">
+<img class="w-full h-full object-cover" data-alt="User profile photo avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDb0RL3thhMqu9VSZsJbgvOHbVWwJVaxtPAG1VQEM59daOxuwuR_vPs1JSP9lfq_CbxvmPzI1J5Her_sKwX5WwRU6Ihqvs3zrxzuDphtWJ2Rz9fuvYz37KcnammBn7vcwUM5Bonu7osqGt1a_5FIKLSt1kO63cGDLNTSp0Sf23Ja6fcaxgSdtnzygGzbdWCwDJdUS3PN2_73icO0whDcvqr3JewrSWR3mouhL0WssSxbJt_sQB1FY8Qpx5jqEf_RyCwAyyNtSy-ACSm"/>
+</div>
+</div>
+</div>
+</header>
+<main class="pt-24 px-6 max-w-lg mx-auto">
+<!-- Hero Section -->
+<section class="mb-10">
+<div class="mb-2">
+<span class="font-label text-xs uppercase tracking-[0.2em] text-primary font-bold">Welcome back</span>
+<h1 class="font-headline text-4xl font-extrabold tracking-tight text-on-secondary-fixed mt-1">Hello, Ahmed</h1>
+</div>
+<div class="grid grid-cols-2 gap-4 mt-6">
+<div class="bg-primary-container p-6 rounded-xl shadow-lg shadow-primary/10 flex flex-col justify-between aspect-square">
+<span class="material-symbols-outlined text-on-primary-container text-3xl" data-icon="confirmation_number">confirmation_number</span>
+<div>
+<div class="text-3xl font-black text-on-primary-container font-headline">03</div>
+<div class="text-sm font-medium text-on-primary-container/80">Active Tickets</div>
+</div>
+</div>
+<div class="bg-surface-container-highest p-6 rounded-xl flex flex-col justify-between aspect-square">
+<span class="material-symbols-outlined text-secondary text-3xl" data-icon="history">history</span>
+<div>
+<div class="text-3xl font-black text-on-secondary-fixed font-headline">12</div>
+<div class="text-sm font-medium text-on-secondary-fixed-variant">Past Events</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Profile Nudge -->
+<div class="bg-on-secondary-fixed text-white p-6 rounded-xl mb-10 flex items-center justify-between shadow-xl">
+<div class="flex-1">
+<h3 class="font-headline text-lg font-bold">Secure your account</h3>
+<p class="text-slate-400 text-sm mt-1 leading-relaxed">Complete your profile to unlock faster check-ins.</p>
+<div class="mt-4 bg-white/10 h-1.5 w-full rounded-full overflow-hidden">
+<div class="bg-primary-container h-full w-[65%]"></div>
+</div>
+</div>
+<button class="ml-6 bg-primary-container text-on-primary-container p-3 rounded-full active:scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+<!-- QR Ticket Wallet -->
+<section class="mb-10 overflow-hidden -mx-6">
+<div class="px-6 flex justify-between items-end mb-4">
+<h2 class="font-headline text-2xl font-bold text-on-secondary-fixed">Ticket Wallet</h2>
+<button class="text-primary text-sm font-bold">View All</button>
+</div>
+<div class="flex gap-6 overflow-x-auto hide-scrollbar px-6 pb-6">
+<!-- Ticket 1 -->
+<div class="flex-shrink-0 w-72 bg-on-secondary-fixed rounded-xl overflow-hidden shadow-2xl relative">
+<div class="p-6 pb-4">
+<div class="flex justify-between items-start mb-4">
+<span class="bg-primary/20 text-primary-container text-[10px] font-bold px-2 py-1 rounded-full border border-primary/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" data-icon="verified" style="font-variation-settings: 'FILL' 1;">verified</span>
+                                SIGNED QR
+                            </span>
+<span class="text-slate-500 font-label text-xs">#TKT-9281</span>
+</div>
+<h3 class="font-headline text-xl font-bold text-white leading-tight">Sound of Saqqara Festival</h3>
+<p class="text-slate-400 text-sm mt-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-xs" data-icon="calendar_today">calendar_today</span>
+                            Oct 24, 2024 • 8:00 PM
+                        </p>
+</div>
+<!-- Tear-off shift -->
+<div class="h-4 bg-surface-container-highest/5 flex items-center justify-between px-[-10px]">
+<div class="w-6 h-6 rounded-full bg-background -ml-3"></div>
+<div class="border-t border-dashed border-white/20 flex-grow mx-2"></div>
+<div class="w-6 h-6 rounded-full bg-background -mr-3"></div>
+</div>
+<div class="p-6 flex flex-col items-center bg-white/5">
+<div class="bg-white p-3 rounded-lg mb-4">
+<img class="w-32 h-32 grayscale opacity-90" data-alt="QR Code for Event Entry" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwFwQYRP51jIlc4PIsIqP6jc-3NY0dDJkZpt7X2LQBJUpuIb7j5fmlLfm1ClCp6zDkskNBHdEDCKcI-0GMfvstjJclk_Oj_u0tlci3SvvDU3hOwlUZqIldsWboh1eR6zmPI1CnR1Kl2q02pLlVgoyNLPjKt3D0mwWKdyHJlJWL0xeOpLpip4_kb0vdcvgt0JvMnfDH7ca8ZvBPtukanlPt8FFaYEBYztvU5fHaBz5FzOz3u8QCKFvldKTgXoQEFCgbb99-fXrOfS5b"/>
+</div>
+<p class="text-white font-bold text-sm tracking-widest">TAP TO ENLARGE</p>
+</div>
+</div>
+<!-- Ticket 2 -->
+<div class="flex-shrink-0 w-72 bg-surface-container-highest rounded-xl overflow-hidden shadow-lg border border-outline-variant/10">
+<div class="p-6 pb-4">
+<div class="flex justify-between items-start mb-4">
+<span class="bg-secondary/10 text-secondary text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" data-icon="lock" style="font-variation-settings: 'FILL' 1;">lock</span>
+                                ENCRYPTED
+                            </span>
+<span class="text-on-surface-variant font-label text-xs">#TKT-4412</span>
+</div>
+<h3 class="font-headline text-xl font-bold text-on-secondary-fixed leading-tight">Giza Pyramids Tech Summit</h3>
+<p class="text-on-surface-variant text-sm mt-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-xs" data-icon="calendar_today">calendar_today</span>
+                            Nov 12, 2024 • 9:00 AM
+                        </p>
+</div>
+<div class="h-4 bg-background/50 flex items-center justify-between px-[-10px]">
+<div class="w-6 h-6 rounded-full bg-background -ml-3"></div>
+<div class="border-t border-dashed border-outline-variant/30 flex-grow mx-2"></div>
+<div class="w-6 h-6 rounded-full bg-background -mr-3"></div>
+</div>
+<div class="p-6 flex flex-col items-center bg-surface-container-low">
+<div class="bg-white p-3 rounded-lg mb-4 opacity-40 blur-[1px]">
+<img class="w-32 h-32 grayscale" data-alt="QR Code for Tech Summit" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlPEafQoyQ530OnpysUDQ6wv9ujM4nAEYCwmsd1BYIAkhf7-MkySnjNEbpTqfe-Gf7hl8J0aCXfAPVR2cKpAz6zxrzhpbxPH8Q7NKzPCNS63rlgR0hLQG_TrGMRnFgC_-PkoR0MbI_FfEYlsTKbVQuvPwmyajoJydXHN5PSO1izXm89YmsR6PRDIIS7TkwOCtjd_xbb_Em-giGGzYJ2GB0DsEeKADlIhEl2C1-FsSdz2Gvre8D11qiMNC1XmaHluuqzPS4jjJkYeMT"/>
+</div>
+<button class="bg-primary-container text-on-primary-container px-6 py-2 rounded-full font-bold text-xs uppercase tracking-widest">Activate QR</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Recent Orders -->
+<section class="mb-10">
+<h2 class="font-headline text-2xl font-bold text-on-secondary-fixed mb-6">Recent Orders</h2>
+<div class="space-y-4">
+<div class="bg-surface-container-low p-4 rounded-xl flex items-center gap-4 hover:bg-surface-container-high transition-colors">
+<div class="w-12 h-12 bg-primary-container/20 rounded-lg flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
+</div>
+<div class="flex-grow">
+<div class="font-bold text-on-secondary-fixed">Cairo Jazz Club Night</div>
+<div class="text-xs text-on-surface-variant">Order #EV-9901 • Yesterday</div>
+</div>
+<div class="text-right">
+<div class="font-headline font-bold text-primary">EGP 450</div>
+<div class="text-[10px] uppercase font-bold text-tertiary">Success</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl flex items-center gap-4 hover:bg-surface-container-high transition-colors">
+<div class="w-12 h-12 bg-primary-container/20 rounded-lg flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
+</div>
+<div class="flex-grow">
+<div class="font-bold text-on-secondary-fixed">Zamalek Art Gallery Pass</div>
+<div class="text-xs text-on-surface-variant">Order #EV-8722 • 4 days ago</div>
+</div>
+<div class="text-right">
+<div class="font-headline font-bold text-primary">EGP 120</div>
+<div class="text-[10px] uppercase font-bold text-tertiary">Success</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Support Link -->
+<div class="flex items-center justify-center py-6 gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-sm" data-icon="help_outline">help_outline</span>
+<span class="text-sm font-medium">Need help with your tickets? <a class="text-primary font-bold" href="#">Contact Support</a></span>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 right-0 z-50">
+<div class="bg-surface/80 backdrop-blur-2xl mx-6 mb-8 rounded-full border border-outline-variant/10 shadow-xl shadow-primary/5 flex justify-around items-center px-4 h-20">
+<a class="flex flex-col items-center justify-center text-on-surface-variant p-3 active:bg-primary-container/20 transition-all rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="explore">explore</span>
+<span class="font-body text-[10px] uppercase tracking-widest mt-1">Explore</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant p-3 active:bg-primary-container/20 transition-all rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="confirmation_number">confirmation_number</span>
+<span class="font-body text-[10px] uppercase tracking-widest mt-1">My Tickets</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant p-3 active:bg-primary-container/20 transition-all rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="font-body text-[10px] uppercase tracking-widest mt-1">Wallet</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-full p-3 scale-110 animate-pulse-subtle" href="#">
+<span class="material-symbols-outlined" data-icon="person" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-body text-[10px] uppercase tracking-widest mt-1">Profile</span>
+</a>
+</div>
+</nav>
+<!-- Footer for context -->
+<footer class="bg-[#161b29] mt-20 pb-32 pt-16 px-8 text-center md:text-left">
+<div class="max-w-7xl mx-auto">
+<span class="text-3xl font-black text-white mb-6 block font-headline">EvntsApp</span>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+<div class="space-y-2">
+<a class="text-slate-400 hover:text-white block text-sm" href="#">Privacy Policy</a>
+<a class="text-slate-400 hover:text-white block text-sm" href="#">Terms of Service</a>
+</div>
+<div class="space-y-2">
+<a class="text-slate-400 hover:text-white block text-sm" href="#">Careers</a>
+<a class="text-slate-400 hover:text-white block text-sm" href="#">Partner with Us</a>
+</div>
+</div>
+<p class="text-slate-400 text-xs border-t border-white/10 pt-8">© 2024 EvntsApp Egypt. All rights reserved.</p>
+</div>
+</footer>
+</body></html>
