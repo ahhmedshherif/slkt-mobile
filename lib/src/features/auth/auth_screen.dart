@@ -21,128 +21,190 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   AuthView view = AuthView.phone;
+  double edgeSwipeDistance = 0;
 
   @override
-  Widget build(BuildContext context) => AnnotatedRegion(
-    value: AppSystemUi.light,
-    child: Scaffold(
-      backgroundColor: AppColors.navy,
-      body: Stack(
-        children: [
-          Positioned(
-            top: -80,
-            right: -90,
-            child: Container(
-              width: 270,
-              height: 270,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [Color(0x55D97757), Color(0x0010172A)],
+  Widget build(BuildContext context) => PopScope(
+    canPop: view == AuthView.phone,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop && view != AuthView.phone) _goBack();
+    },
+    child: AnnotatedRegion(
+      value: AppSystemUi.light,
+      child: Scaffold(
+        backgroundColor: AppColors.navy,
+        body: Stack(
+          children: [
+            Positioned(
+              top: -80,
+              right: -90,
+              child: Container(
+                width: 270,
+                height: 270,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [Color(0x55D97757), Color(0x0010172A)],
+                  ),
                 ),
               ),
             ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                const MotionEntrance(
-                  delay: Duration(milliseconds: 120),
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(24, 24, 24, 18),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppColors.yellow,
-                        borderRadius: BorderRadius.all(Radius.circular(18)),
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
+            SafeArea(
+              child: Column(
+                children: [
+                  const MotionEntrance(
+                    delay: Duration(milliseconds: 120),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(24, 24, 24, 18),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: AppColors.yellow,
+                          borderRadius: BorderRadius.all(Radius.circular(18)),
                         ),
-                        child: BrandMark(height: 36),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          child: BrandMark(height: 36),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: AppColors.canvas,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(36),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: AppColors.canvas,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(36),
+                        ),
                       ),
-                    ),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 30, 24, 36),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 420),
-                        switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
-                        switchOutCurve: const Cubic(0.3, 0, 1, 1),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutCubic,
-                          ),
-                          child: SlideTransition(
-                            position:
-                                Tween(
-                                  begin: const Offset(.055, .012),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: animation,
-                                    curve: const Cubic(0.05, 0.7, 0.1, 1),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 30, 24, 36),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 420),
+                          switchInCurve: const Cubic(0.05, 0.7, 0.1, 1),
+                          switchOutCurve: const Cubic(0.3, 0, 1, 1),
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(
+                                opacity: CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                                child: SlideTransition(
+                                  position:
+                                      Tween(
+                                        begin: const Offset(.055, .012),
+                                        end: Offset.zero,
+                                      ).animate(
+                                        CurvedAnimation(
+                                          parent: animation,
+                                          curve: const Cubic(0.05, 0.7, 0.1, 1),
+                                        ),
+                                      ),
+                                  child: ScaleTransition(
+                                    scale: Tween<double>(
+                                      begin: .985,
+                                      end: 1,
+                                    ).animate(animation),
+                                    child: child,
                                   ),
                                 ),
-                            child: ScaleTransition(
-                              scale: Tween<double>(
-                                begin: .985,
-                                end: 1,
-                              ).animate(animation),
-                              child: child,
+                              ),
+                          child: switch (view) {
+                            AuthView.phone => PhoneLogin(
+                              key: const ValueKey('phone'),
+                              api: widget.api,
+                              session: widget.session,
+                              change: _change,
                             ),
-                          ),
+                            AuthView.email => EmailLogin(
+                              key: const ValueKey('email'),
+                              api: widget.api,
+                              session: widget.session,
+                              change: _change,
+                            ),
+                            AuthView.register => RegisterForm(
+                              key: const ValueKey('register'),
+                              api: widget.api,
+                              session: widget.session,
+                              change: _change,
+                            ),
+                            AuthView.forgot => ForgotPassword(
+                              key: const ValueKey('forgot'),
+                              api: widget.api,
+                              change: _change,
+                            ),
+                          },
                         ),
-                        child: switch (view) {
-                          AuthView.phone => PhoneLogin(
-                            key: const ValueKey('phone'),
-                            api: widget.api,
-                            session: widget.session,
-                            change: _change,
-                          ),
-                          AuthView.email => EmailLogin(
-                            key: const ValueKey('email'),
-                            api: widget.api,
-                            session: widget.session,
-                            change: _change,
-                          ),
-                          AuthView.register => RegisterForm(
-                            key: const ValueKey('register'),
-                            api: widget.api,
-                            session: widget.session,
-                            change: _change,
-                          ),
-                          AuthView.forgot => ForgotPassword(
-                            key: const ValueKey('forgot'),
-                            api: widget.api,
-                            change: _change,
-                          ),
-                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (view != AuthView.phone)
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 34,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragUpdate: (details) {
+                    if (details.delta.dx <= 0) return;
+                    setState(() {
+                      edgeSwipeDistance = (edgeSwipeDistance + details.delta.dx)
+                          .clamp(0, 110);
+                    });
+                  },
+                  onHorizontalDragEnd: (details) {
+                    final shouldGoBack =
+                        edgeSwipeDistance >= 64 ||
+                        (details.primaryVelocity ?? 0) > 650;
+                    setState(() => edgeSwipeDistance = 0);
+                    if (shouldGoBack) _goBack();
+                  },
+                  onHorizontalDragCancel: () =>
+                      setState(() => edgeSwipeDistance = 0),
+                ),
+              ),
+            if (edgeSwipeDistance > 0)
+              Positioned(
+                left: 10 + (edgeSwipeDistance * .28),
+                top: MediaQuery.sizeOf(context).height * .46,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppColors.black.withValues(alpha: .88),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        color: edgeSwipeDistance >= 64
+                            ? AppColors.yellow
+                            : Colors.white,
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
+              ),
+          ],
+        ),
       ),
     ),
   );
 
   void _change(AuthView next) => setState(() => view = next);
+
+  void _goBack() => _change(switch (view) {
+    AuthView.forgot => AuthView.email,
+    AuthView.email || AuthView.register => AuthView.phone,
+    AuthView.phone => AuthView.phone,
+  });
 }
 
 class PhoneLogin extends StatefulWidget {

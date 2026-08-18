@@ -224,6 +224,28 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('auth edge swipe returns to the previous auth screen', (
+    tester,
+  ) async {
+    final api = ApiClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: AuthScreen(api: api, session: SessionController(api)),
+      ),
+    );
+
+    await tester.tap(find.text('Create an account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create your account'), findsOneWidget);
+
+    await tester.dragFrom(const Offset(2, 360), const Offset(110, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Create your account'), findsNothing);
+  });
+
   test('ticket links accept only the trusted SLKT destinations', () {
     expect(isTicketsAppLink(Uri.parse('https://slktegy.com/tickets')), isTrue);
     expect(
