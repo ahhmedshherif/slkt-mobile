@@ -94,7 +94,12 @@ class _OperationsDashboardState extends State<OperationsDashboard> {
   @override
   Widget build(BuildContext context) => SafeArea(
     child: RefreshIndicator(
-      onRefresh: () async => setState(() => future = _load()),
+      onRefresh: () async {
+        setState(() {
+          future = _load();
+        });
+        await future;
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
         children: [

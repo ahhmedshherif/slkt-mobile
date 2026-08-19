@@ -320,7 +320,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) => SafeArea(
     child: SlktRefresh(
-      onRefresh: () async => setState(() => future = _load()),
+      onRefresh: () async {
+        setState(() {
+          future = _load();
+        });
+        await future;
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 36),
         children: [
@@ -360,7 +365,9 @@ class _HomeScreenState extends State<HomeScreen> {
           AsyncPanel(
             future: future,
             skeleton: const SectionSkeleton(cards: 3, cardHeight: 190),
-            onRetry: () => setState(() => future = _load()),
+            onRetry: () => setState(() {
+              future = _load();
+            }),
             builder: (context, raw) {
               final data = Map<String, dynamic>.from(raw as Map);
               final upcoming = List<Map<String, dynamic>>.from(
@@ -2120,7 +2127,11 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
         '/mobile/buyer/notifications/read',
         audience: 'buyer',
       );
-      if (mounted) setState(() => future = _load());
+      if (mounted) {
+        setState(() {
+          future = _load();
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => this.error = errorMessage(error));
     } finally {
@@ -2134,7 +2145,11 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
         '/mobile/buyer/notifications/$id/read',
         audience: 'buyer',
       );
-      if (mounted) setState(() => future = _load());
+      if (mounted) {
+        setState(() {
+          future = _load();
+        });
+      }
     } catch (caught) {
       if (mounted) setState(() => error = errorMessage(caught));
     }
@@ -2146,7 +2161,11 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
         '/mobile/buyer/notifications/$id',
         audience: 'buyer',
       );
-      if (mounted) setState(() => future = _load());
+      if (mounted) {
+        setState(() {
+          future = _load();
+        });
+      }
     } catch (caught) {
       if (mounted) setState(() => error = errorMessage(caught));
     }
@@ -2237,7 +2256,12 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
           ),
           Expanded(
             child: SlktRefresh(
-              onRefresh: () async => setState(() => future = _load()),
+              onRefresh: () async {
+                setState(() {
+                  future = _load();
+                });
+                await future;
+              },
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
@@ -2272,7 +2296,9 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                   const SizedBox(height: 14),
                   AsyncPanel(
                     future: future,
-                    onRetry: () => setState(() => future = _load()),
+                    onRetry: () => setState(() {
+                      future = _load();
+                    }),
                     skeleton: const SectionSkeleton(cards: 4, cardHeight: 96),
                     builder: (context, response) {
                       final items = (response['data'] as List? ?? const [])
@@ -2716,7 +2742,12 @@ class _TicketsScreenState extends State<TicketsScreen>
             controller: tabs,
             children: [
               SlktRefresh(
-                onRefresh: () async => setState(() => tickets = _loadTickets()),
+                onRefresh: () async {
+                  setState(() {
+                    tickets = _loadTickets();
+                  });
+                  await tickets;
+                },
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
                   children: [
@@ -3899,7 +3930,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     audience: 'buyer',
   );
 
-  void _reload() => setState(() => future = _load());
+  void _reload() => setState(() {
+    future = _load();
+  });
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -4417,69 +4450,17 @@ class ProfileScreen extends StatelessWidget {
   }
 
   Future<void> _editName(BuildContext context) async {
-    final name = TextEditingController(text: session.user['name']?.toString());
-    final nextName = await showDialog<String>(
+    final values = await showModalBottomSheet<Map<String, String>>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Change your name'),
-        content: TextField(
-          controller: name,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Full name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, name.text.trim()),
-            child: const Text('Continue'),
-          ),
-        ],
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _SecureProfileSheet.name(
+        initialName: session.user['name']?.toString() ?? '',
       ),
     );
-    name.dispose();
-    if (nextName == null || nextName.isEmpty || !context.mounted) return;
-
-    final password = TextEditingController();
-    final currentPassword = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.shield_outlined, color: AppColors.coralDark),
-        title: const Text('Confirm it is you'),
-        content: TextField(
-          controller: password,
-          autofocus: true,
-          obscureText: true,
-          autofillHints: const [AutofillHints.password],
-          decoration: const InputDecoration(labelText: 'Current password'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, password.text),
-            child: const Text('Confirm & change'),
-          ),
-        ],
-      ),
-    );
-    password.dispose();
-    if (currentPassword == null ||
-        currentPassword.isEmpty ||
-        !context.mounted) {
-      return;
-    }
+    if (values == null || !context.mounted) return;
     try {
-      await api.patch(
-        '/buyer/profile',
-        audience: 'buyer',
-        data: {'name': nextName, 'current_password': currentPassword},
-      );
+      await api.patch('/buyer/profile', audience: 'buyer', data: values);
       await session.refreshBuyer();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4492,88 +4473,18 @@ class ProfileScreen extends StatelessWidget {
   }
 
   Future<void> _changePassword(BuildContext context) async {
-    final current = TextEditingController();
-    final password = TextEditingController();
-    final confirmation = TextEditingController();
-    final submit = await showModalBottomSheet<bool>(
+    final values = await showModalBottomSheet<Map<String, String>>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          22,
-          20,
-          22,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.black12,
-                  borderRadius: BorderRadius.circular(9),
-                ),
-              ),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              'Change password',
-              style: Theme.of(sheetContext).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Use at least 8 characters with uppercase, lowercase, number and symbol.',
-              style: TextStyle(color: AppColors.muted, height: 1.4),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: current,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Current password'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: password,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'New password'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: confirmation,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirm new password',
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () => Navigator.pop(sheetContext, true),
-              child: const Text('Change password'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const _SecureProfileSheet.password(),
     );
-    if (submit != true || !context.mounted) {
-      current.dispose();
-      password.dispose();
-      confirmation.dispose();
-      return;
-    }
+    if (values == null || !context.mounted) return;
     try {
       await api.post(
         '/buyer/profile/password',
         audience: 'buyer',
-        data: {
-          'current_password': current.text,
-          'password': password.text,
-          'password_confirmation': confirmation.text,
-        },
+        data: values,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4582,12 +4493,183 @@ class ProfileScreen extends StatelessWidget {
       }
     } catch (error) {
       if (context.mounted) showError(context, error);
-    } finally {
-      current.dispose();
-      password.dispose();
-      confirmation.dispose();
     }
   }
+}
+
+class _SecureProfileSheet extends StatefulWidget {
+  const _SecureProfileSheet.name({required this.initialName})
+    : changesName = true;
+
+  const _SecureProfileSheet.password() : changesName = false, initialName = '';
+
+  final bool changesName;
+  final String initialName;
+
+  @override
+  State<_SecureProfileSheet> createState() => _SecureProfileSheetState();
+}
+
+class _SecureProfileSheetState extends State<_SecureProfileSheet> {
+  late final name = TextEditingController(text: widget.initialName);
+  final current = TextEditingController();
+  final password = TextEditingController();
+  final confirmation = TextEditingController();
+
+  @override
+  void dispose() {
+    name.dispose();
+    current.dispose();
+    password.dispose();
+    confirmation.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (widget.changesName) {
+      if (name.text.trim().length < 2 || current.text.isEmpty) {
+        showAppNotice(
+          context,
+          'Enter your full name and current password.',
+          error: true,
+        );
+        return;
+      }
+      FocusScope.of(context).unfocus();
+      Navigator.pop(context, {
+        'name': name.text.trim(),
+        'current_password': current.text,
+      });
+      return;
+    }
+
+    if (current.text.isEmpty || password.text.length < 8) {
+      showAppNotice(
+        context,
+        'Enter your current password and a new password of at least 8 characters.',
+        error: true,
+      );
+      return;
+    }
+    if (password.text != confirmation.text) {
+      showAppNotice(context, 'New passwords do not match.', error: true);
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    Navigator.pop(context, {
+      'current_password': current.text,
+      'password': password.text,
+      'password_confirmation': confirmation.text,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedPadding(
+    duration: const Duration(milliseconds: 180),
+    curve: Curves.easeOutCubic,
+    padding: EdgeInsets.fromLTRB(
+      22,
+      20,
+      22,
+      MediaQuery.viewInsetsOf(context).bottom + 24,
+    ),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black12,
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          Text(
+            widget.changesName ? 'Change your name' : 'Change password',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.changesName
+                ? 'Enter your new name and confirm the change with your current password.'
+                : 'Use at least 8 characters with uppercase, lowercase, number and symbol.',
+            style: const TextStyle(color: AppColors.muted, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          if (widget.changesName) ...[
+            TextField(
+              key: const ValueKey('profile-name-input'),
+              controller: name,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Full name',
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          TextField(
+            key: widget.changesName
+                ? const ValueKey('profile-name-current-password')
+                : const ValueKey('profile-password-current'),
+            controller: current,
+            obscureText: true,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Current password',
+              prefixIcon: Icon(Icons.lock_outline_rounded),
+            ),
+          ),
+          if (!widget.changesName) ...[
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('profile-password-new'),
+              controller: password,
+              obscureText: true,
+              autofillHints: const [AutofillHints.newPassword],
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'New password'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('profile-password-confirmation'),
+              controller: confirmation,
+              obscureText: true,
+              autofillHints: const [AutofillHints.newPassword],
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              decoration: const InputDecoration(
+                labelText: 'Confirm new password',
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            key: widget.changesName
+                ? const ValueKey('profile-name-submit')
+                : const ValueKey('profile-password-submit'),
+            onPressed: _submit,
+            icon: Icon(
+              widget.changesName
+                  ? Icons.verified_user_outlined
+                  : Icons.lock_reset_rounded,
+            ),
+            label: Text(
+              widget.changesName ? 'Confirm & change name' : 'Change password',
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _OrganizerProfileCard extends StatelessWidget {

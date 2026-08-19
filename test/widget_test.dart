@@ -497,6 +497,59 @@ void main() {
     expect(find.text('Platinum'), findsOneWidget);
     expect(find.text('Continue secure payment'), findsOneWidget);
   });
+
+  testWidgets('profile name changes in one secure bottom sheet', (
+    tester,
+  ) async {
+    final api = _FakeProfileApi();
+    final session = SessionController(api)
+      ..kind = SessionKind.buyer
+      ..restoring = false
+      ..user = {
+        'id': 9,
+        'name': 'Ahmed Test',
+        'email': 'ahmed@example.com',
+        'phone': '01100539011',
+        'phone_verified': true,
+      };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: ProfileScreen(api: api, session: session),
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(find.text('Name'));
+    await tester.tap(find.text('Name'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Change your name'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byKey(const ValueKey('profile-name-input')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('profile-name-current-password')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('profile-name-input')),
+      'Ahmed Updated',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('profile-name-current-password')),
+      'CurrentPassword!1',
+    );
+    await tester.tap(find.byKey(const ValueKey('profile-name-submit')));
+    await tester.pumpAndSettle();
+
+    expect(api.updatedName, 'Ahmed Updated');
+    expect(api.currentPassword, 'CurrentPassword!1');
+    expect(session.user['name'], 'Ahmed Updated');
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _FakeCheckoutApi extends ApiClient {
@@ -605,6 +658,38 @@ class _FakeOrderApi extends ApiClient {
         },
       ],
       'tickets': [],
+    },
+  };
+}
+
+class _FakeProfileApi extends ApiClient {
+  String? updatedName;
+  String? currentPassword;
+
+  @override
+  Future<Map<String, dynamic>> patch(
+    String path, {
+    String? audience,
+    Object? data,
+  }) async {
+    final values = Map<String, dynamic>.from(data! as Map);
+    updatedName = values['name']?.toString();
+    currentPassword = values['current_password']?.toString();
+    return {'message': 'Profile updated.'};
+  }
+
+  @override
+  Future<Map<String, dynamic>> get(
+    String path, {
+    String? audience,
+    Map<String, dynamic>? query,
+  }) async => {
+    'buyer': {
+      'id': 9,
+      'name': updatedName ?? 'Ahmed Test',
+      'email': 'ahmed@example.com',
+      'phone': '01100539011',
+      'phone_verified': true,
     },
   };
 }
