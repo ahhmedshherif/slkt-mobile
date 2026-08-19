@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
+import '../../core/buyer_local_store.dart';
 import '../../core/theme.dart';
 import '../../widgets/common.dart';
 
@@ -64,6 +66,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
   bool checkoutBusy = false;
   String? error;
   int previewSequence = 0;
+  bool restoringCart = true;
 
   List<Map<String, dynamic>> get types =>
       (widget.event['ticket_types'] as List? ?? const [])
@@ -88,18 +91,46 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
   @override
   void initState() {
     super.initState();
-    final selected = widget.initialTicketTypeId;
-    if (selected != null) quantities[selected] = 1;
-    if (quantities.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadPreview());
-    }
+    promo.addListener(_persistCart);
+    _restoreCart();
   }
 
   @override
   void dispose() {
     previewDebounce?.cancel();
+    promo.removeListener(_persistCart);
     promo.dispose();
     super.dispose();
+  }
+
+  Future<void> _restoreCart() async {
+    final slug = widget.event['slug']?.toString() ?? '';
+    final saved = await BuyerLocalStore.cart(slug);
+    if (!mounted) return;
+    final restored = Map<String, dynamic>.from(
+      saved?['quantities'] as Map? ?? const {},
+    );
+    for (final entry in restored.entries) {
+      final id = int.tryParse(entry.key);
+      final value = (entry.value as num?)?.toInt() ?? 0;
+      if (id != null && value > 0 && types.any((type) => type['id'] == id)) {
+        quantities[id] = value;
+      }
+    }
+    promo.text = saved?['promo']?.toString() ?? '';
+    final selected = widget.initialTicketTypeId;
+    if (selected != null) quantities[selected] = quantities[selected] ?? 1;
+    setState(() => restoringCart = false);
+    if (quantities.isNotEmpty) await _loadPreview();
+  }
+
+  void _persistCart() {
+    if (restoringCart) return;
+    BuyerLocalStore.saveCart(
+      widget.event['slug']?.toString() ?? '',
+      quantities: payloadQuantities,
+      promo: promo.text.trim(),
+    );
   }
 
   @override
@@ -331,8 +362,10 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
               label: '$ticketCount ticket${ticketCount == 1 ? '' : 's'}',
               value: '${_money(subtotal)} $currency',
             ),
-            if (tax > 0)
-              _SummaryLine(label: 'VAT', value: '${_money(tax)} $currency'),
+            _SummaryLine(
+              label: tax > 0 ? 'Service fees & VAT' : 'Service fees',
+              value: tax > 0 ? '${_money(tax)} $currency' : 'Included',
+            ),
             if (discount > 0)
               _SummaryLine(
                 label: 'Discount',
@@ -356,6 +389,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
   }
 
   void _setQuantity(int id, int value) {
+    HapticFeedback.selectionClick();
     setState(() {
       error = null;
       if (value <= 0) {
@@ -365,6 +399,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
       }
       preview = null;
     });
+    _persistCart();
     previewDebounce?.cancel();
     if (ticketCount > 0) {
       previewDebounce = Timer(const Duration(milliseconds: 320), _loadPreview);
@@ -423,6 +458,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
         },
       );
       final data = Map<String, dynamic>.from(response['data'] as Map);
+      await BuyerLocalStore.clearCart(widget.event['slug']?.toString() ?? '');
       final checkoutUrl = Uri.tryParse(data['checkout_url']?.toString() ?? '');
       final orderId = (data['order_id'] as num?)?.toInt();
       final expiresAt = DateTime.tryParse(data['expires_at']?.toString() ?? '');
@@ -614,6 +650,8 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
   bool pageFailed = false;
   bool expired = false;
   CheckoutPaymentStatus? terminalStatus;
+  bool fiveMinuteWarningSent = false;
+  bool twoMinuteWarningSent = false;
 
   @override
   void initState() {
@@ -717,6 +755,38 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
                             ),
                           ),
                         ],
+                      ),
+                      AnimatedSize(
+                        duration: reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 220),
+                        child: remaining.inSeconds <= 300
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: Color(0xFFFFA07A),
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        remaining.inSeconds <= 120
+                                            ? 'Only 2 minutes left. Finish payment now or the tickets return to sale.'
+                                            : 'Less than 5 minutes left. Your tickets are not held after the timer ends.',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
                       Row(
                         children: [
@@ -1056,6 +1126,14 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
     if (!mounted || terminalStatus != null) return;
     final next = localDeadline.difference(DateTime.now());
     setState(() => remaining = next.isNegative ? Duration.zero : next);
+    if (remaining.inSeconds <= 300 && !fiveMinuteWarningSent) {
+      fiveMinuteWarningSent = true;
+      HapticFeedback.mediumImpact();
+    }
+    if (remaining.inSeconds <= 120 && !twoMinuteWarningSent) {
+      twoMinuteWarningSent = true;
+      HapticFeedback.heavyImpact();
+    }
     if (remaining == Duration.zero) {
       countdown?.cancel();
       unawaited(_checkOrder());

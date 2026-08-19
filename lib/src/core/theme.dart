@@ -75,7 +75,7 @@ ThemeData buildTheme() {
       color: AppColors.paper,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(20)),
+        borderRadius: BorderRadius.all(Radius.circular(16)),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -83,22 +83,22 @@ ThemeData buildTheme() {
       fillColor: const Color(0xFFF0ECE8),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: AppColors.coral, width: 2),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(56),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         backgroundColor: AppColors.black,
         foregroundColor: AppColors.yellow,
         disabledBackgroundColor: AppColors.black.withValues(alpha: .35),
@@ -110,7 +110,7 @@ ThemeData buildTheme() {
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(44, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
     ),

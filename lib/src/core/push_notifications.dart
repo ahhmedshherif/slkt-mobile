@@ -80,7 +80,13 @@ class PushNotifications {
     };
     final action = data['action']?.toString().toLowerCase();
     session.requestBuyerDestination(
-      action == 'orders'
+      data['order_id'] != null
+          ? 'order:${data['order_id']}'
+          : data['ticket_id'] != null
+          ? 'ticket:${data['ticket_id']}'
+          : data['event_slug'] != null
+          ? 'event:${data['event_slug']}'
+          : action == 'orders'
           ? 'orders'
           : action == 'transfers'
           ? 'transfers'

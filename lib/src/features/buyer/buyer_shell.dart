@@ -1,11 +1,19 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:intl/intl.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
+import '../../core/buyer_local_store.dart';
 import '../../core/session_controller.dart';
 import '../../core/theme.dart';
 import '../../widgets/common.dart';
@@ -35,6 +43,7 @@ class _BuyerShellState extends State<BuyerShell> {
       unreadNotifications: unreadNotifications,
       openNotifications: _openNotifications,
       openTickets: _openTickets,
+      openOrders: () => setState(() => index = 3),
     ),
     ExploreScreen(
       api: widget.api,
@@ -68,9 +77,58 @@ class _BuyerShellState extends State<BuyerShell> {
     if (!mounted) return;
     final destination = widget.session.consumeBuyerDestination();
     if (destination == null) return;
+    unawaited(_navigateToDestination(destination));
+  }
+
+  Future<void> _navigateToDestination(String destination) async {
+    if (!mounted) return;
+    if (destination.startsWith('event:')) {
+      final slug = destination.substring(6);
+      try {
+        final response = await widget.api.get('/mobile/events/$slug');
+        if (!mounted) return;
+        _openEvent(
+          context,
+          widget.api,
+          Map<String, dynamic>.from(response['data'] as Map),
+          _refreshCommerce,
+          _openTickets,
+        );
+      } catch (error) {
+        if (mounted) showError(context, error);
+      }
+      return;
+    }
+    if (destination.startsWith('order:')) {
+      setState(() => index = 3);
+      try {
+        final response = await widget.api.get(
+          '/mobile/buyer/orders/${destination.substring(6)}',
+          audience: 'buyer',
+        );
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => OrderDetailScreen(
+              api: widget.api,
+              order: Map<String, dynamic>.from(response['data'] as Map),
+              openTickets: _openTickets,
+            ),
+          ),
+        );
+      } catch (error) {
+        if (mounted) showError(context, error);
+      }
+      return;
+    }
     setState(() => index = destination == 'orders' ? 3 : 2);
     _refreshCommerce();
-    if (destination == 'transfers') {
+    if (destination.startsWith('ticket:')) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => ticketsKey.currentState?.openTicket(destination.substring(7)),
+      );
+    } else if (destination == 'transfers') {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => ticketsKey.currentState?.showTab(1),
       );
@@ -114,11 +172,21 @@ class _BuyerShellState extends State<BuyerShell> {
     );
     await _refreshNotifications();
     if (!mounted || action == null) return;
-    setState(() => index = action == 'orders' ? 3 : 2);
-    if (action == 'transfers') {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => ticketsKey.currentState?.showTab(1),
+    try {
+      final payload = Map<String, dynamic>.from(jsonDecode(action) as Map);
+      final meta = Map<String, dynamic>.from(
+        payload['meta'] as Map? ?? const {},
       );
+      final destination = meta['order_id'] != null
+          ? 'order:${meta['order_id']}'
+          : meta['ticket_id'] != null
+          ? 'ticket:${meta['ticket_id']}'
+          : meta['event_slug'] != null
+          ? 'event:${meta['event_slug']}'
+          : payload['action']?.toString() ?? 'tickets';
+      await _navigateToDestination(destination);
+    } catch (_) {
+      await _navigateToDestination(action);
     }
   }
 
@@ -139,6 +207,7 @@ class _BuyerShellState extends State<BuyerShell> {
       bottomNavigationBar: SlktNavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) {
+          HapticFeedback.selectionClick();
           if (value == 2 || value == 3) _refreshCommerce();
           setState(() => index = value);
         },
@@ -181,6 +250,7 @@ class HomeScreen extends StatefulWidget {
     required this.unreadNotifications,
     required this.openNotifications,
     required this.openTickets,
+    required this.openOrders,
   });
   final ApiClient api;
   final SessionController session;
@@ -189,6 +259,7 @@ class HomeScreen extends StatefulWidget {
   final ValueListenable<int> unreadNotifications;
   final VoidCallback openNotifications;
   final VoidCallback openTickets;
+  final VoidCallback openOrders;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -198,32 +269,57 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<Map<String, dynamic>> future = _load();
 
   Future<Map<String, dynamic>> _load() async {
+    final recent = await BuyerLocalStore.recentEvents();
+    final recommendationQuery = <String, dynamic>{
+      'per_page': 12,
+      'recommended': true,
+    };
+    if (recent.isNotEmpty) {
+      final categoryId = recent.first['category']?['id'];
+      final city = recent.first['venue']?['city']?.toString();
+      if (categoryId != null) {
+        recommendationQuery['category_id'] = categoryId;
+      } else if (city?.isNotEmpty == true) {
+        recommendationQuery['city'] = city;
+      }
+    }
     final responses = await Future.wait([
       widget.api.get('/mobile/events', query: {'per_page': 16}),
-      widget.api.get(
-        '/mobile/events',
-        query: {'per_page': 12, 'recommended': true},
-      ),
+      widget.api.get('/mobile/events', query: recommendationQuery),
       widget.api.get(
         '/mobile/events',
         query: {'per_page': 8, 'period': 'past'},
       ),
+      widget.api.get('/mobile/events', query: {'per_page': 10, 'hot': true}),
     ]);
     Map<String, dynamic> tickets = const {};
+    Map<String, dynamic> orders = const {};
     try {
-      tickets = await widget.api.get('/buyer/tickets', audience: 'buyer');
+      final buyerData = await Future.wait([
+        widget.api.get('/buyer/tickets', audience: 'buyer'),
+        widget.api.get(
+          '/mobile/buyer/orders',
+          audience: 'buyer',
+          query: {'per_page': 10},
+        ),
+      ]);
+      tickets = buyerData[0];
+      orders = buyerData[1];
     } catch (_) {}
     return {
       'upcoming': responses[0]['data'] ?? [],
       'recommended': responses[1]['data'] ?? [],
       'past': responses[2]['data'] ?? [],
+      'trending': responses[3]['data'] ?? [],
       'tickets': tickets['tickets'] ?? [],
+      'orders': orders['data'] ?? [],
+      'recent': recent,
     };
   }
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    child: RefreshIndicator(
+    child: SlktRefresh(
       onRefresh: () async => setState(() => future = _load()),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 36),
@@ -287,10 +383,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   (e) => Map<String, dynamic>.from(e as Map),
                 ),
               );
+              final trending = _eventList(data['trending']);
+              final recent = _eventList(data['recent']);
+              final orders = _eventList(data['orders']);
+              final pending = orders
+                  .where((order) => order['can_resume_payment'] == true)
+                  .toList();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _QuickSummary(events: upcoming, tickets: tickets),
+                  if (pending.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _PendingCheckoutCard(
+                      order: pending.first,
+                      onContinue: widget.openOrders,
+                    ),
+                  ],
                   const SizedBox(height: 28),
                   if (upcoming.isEmpty)
                     EmptyState(
@@ -332,6 +441,26 @@ class _HomeScreenState extends State<HomeScreen> {
                         onOpen: _open,
                       ),
                     ],
+                    if (trending.isNotEmpty) ...[
+                      const SizedBox(height: 30),
+                      _EventRail(
+                        title: 'Trending this week',
+                        subtitle: 'The events everyone is watching',
+                        events: trending.take(8).toList(),
+                        onViewAll: widget.explore,
+                        onOpen: _open,
+                      ),
+                    ],
+                    if (recent.isNotEmpty) ...[
+                      const SizedBox(height: 30),
+                      _EventRail(
+                        title: 'Recently viewed',
+                        subtitle: 'Pick up where you left off',
+                        events: recent.take(8).toList(),
+                        onViewAll: widget.explore,
+                        onOpen: _open,
+                      ),
+                    ],
                     if (past.isNotEmpty) ...[
                       const SizedBox(height: 30),
                       _EventRail(
@@ -351,6 +480,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ),
   );
+
+  List<Map<String, dynamic>> _eventList(Object? raw) => List.from(
+    raw as List? ?? const [],
+  ).map((value) => Map<String, dynamic>.from(value as Map)).toList();
 
   List<Map<String, dynamic>> _nearby(List<Map<String, dynamic>> events) {
     final cities = events
@@ -429,6 +562,57 @@ class _QuickSummary extends StatelessWidget {
   );
 }
 
+class _PendingCheckoutCard extends StatelessWidget {
+  const _PendingCheckoutCard({required this.order, required this.onContinue});
+
+  final Map<String, dynamic> order;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: AppColors.yellow,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            backgroundColor: AppColors.black,
+            foregroundColor: AppColors.yellow,
+            child: Icon(Icons.shopping_bag_outlined),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Continue checkout',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  order['event']?['name']?.toString() ??
+                      order['order_number']?.toString() ??
+                      'Pending order',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              onContinue();
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class SummaryPill extends StatelessWidget {
   const SummaryPill({super.key, required this.value, required this.label});
   final String value;
@@ -492,21 +676,53 @@ class _EventRail extends StatelessWidget {
           clipBehavior: Clip.none,
           itemCount: events.length,
           separatorBuilder: (_, _) => const SizedBox(width: 12),
-          itemBuilder: (context, index) => EventPosterCard(
-            event: events[index],
-            onTap: () => onOpen(events[index]),
-          ),
+          itemBuilder: (context, index) {
+            final event = <String, dynamic>{
+              ...events[index],
+              '_hero_tag':
+                  'event-${title.toLowerCase().replaceAll(' ', '-')}-${events[index]['slug'] ?? events[index]['id']}',
+            };
+            return EventPosterCard(event: event, onTap: () => onOpen(event));
+          },
         ),
       ),
     ],
   );
 }
 
-class EventPosterCard extends StatelessWidget {
+class EventPosterCard extends StatefulWidget {
   const EventPosterCard({super.key, required this.event, required this.onTap});
 
   final Map<String, dynamic> event;
   final VoidCallback onTap;
+
+  @override
+  State<EventPosterCard> createState() => _EventPosterCardState();
+}
+
+class _EventPosterCardState extends State<EventPosterCard> {
+  bool favorite = false;
+
+  Map<String, dynamic> get event => widget.event;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorite();
+  }
+
+  Future<void> _loadFavorite() async {
+    final values = await BuyerLocalStore.favorites();
+    if (mounted) setState(() => favorite = values.contains(event['slug']));
+  }
+
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.selectionClick();
+    final selected = await BuyerLocalStore.toggleFavorite(
+      event['slug']?.toString() ?? '',
+    );
+    if (mounted) setState(() => favorite = selected);
+  }
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -514,7 +730,7 @@ class EventPosterCard extends StatelessWidget {
     child: Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -522,7 +738,12 @@ class EventPosterCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  EventImage(url: event['image_url']?.toString()),
+                  Hero(
+                    tag: _eventHeroTag(event),
+                    createRectTween: (begin, end) =>
+                        MaterialRectArcTween(begin: begin, end: end),
+                    child: EventImage(url: event['image_url']?.toString()),
+                  ),
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -538,10 +759,45 @@ class EventPosterCard extends StatelessWidget {
                     child: StatusChip(
                       label: event['has_ended'] == true
                           ? 'ENDED'
-                          : _date(event['starts_at']),
+                          : _eventNextSession(event),
                       color: event['has_ended'] == true
                           ? Colors.white
                           : AppColors.yellow,
+                    ),
+                  ),
+                  if (_eventAvailabilityLabel(event) case final label?)
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: StatusChip(
+                        label: label,
+                        color: label == 'SOLD OUT'
+                            ? Colors.white
+                            : AppColors.yellow,
+                      ),
+                    ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: IconButton.filled(
+                      tooltip: favorite
+                          ? 'Remove from favorites'
+                          : 'Add to favorites',
+                      onPressed: _toggleFavorite,
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xCFFFFFFF),
+                        foregroundColor: AppColors.black,
+                      ),
+                      icon: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child: Icon(
+                          favorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          key: ValueKey(favorite),
+                          color: favorite ? AppColors.coralDark : null,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -566,6 +822,17 @@ class EventPosterCard extends StatelessWidget {
                     style: const TextStyle(
                       color: AppColors.muted,
                       fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _eventPriceLabel(event),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.coralDark,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
@@ -998,16 +1265,41 @@ class _ExploreFiltersSheetState extends State<_ExploreFiltersSheet> {
   }
 }
 
-class EventCard extends StatelessWidget {
+class EventCard extends StatefulWidget {
   const EventCard({super.key, required this.event, required this.onTap});
   final Map<String, dynamic> event;
   final VoidCallback onTap;
 
   @override
+  State<EventCard> createState() => _EventCardState();
+}
+
+class _EventCardState extends State<EventCard> {
+  bool favorite = false;
+
+  Map<String, dynamic> get event => widget.event;
+
+  @override
+  void initState() {
+    super.initState();
+    BuyerLocalStore.favorites().then((values) {
+      if (mounted) setState(() => favorite = values.contains(event['slug']));
+    });
+  }
+
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.selectionClick();
+    final value = await BuyerLocalStore.toggleFavorite(
+      event['slug']?.toString() ?? '',
+    );
+    if (mounted) setState(() => favorite = value);
+  }
+
+  @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Row(
         children: [
           SizedBox(
@@ -1063,7 +1355,7 @@ class EventCard extends StatelessWidget {
                         const StatusChip(label: 'HOT', color: AppColors.coral),
                       const Spacer(),
                       Text(
-                        _date(event['starts_at']),
+                        _eventNextSession(event),
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.coralDark,
@@ -1080,6 +1372,42 @@ class EventCard extends StatelessWidget {
                     style: Theme.of(
                       context,
                     ).textTheme.titleLarge?.copyWith(fontSize: 17),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _eventPriceLabel(event),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.coralDark,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (_eventAvailabilityLabel(event) case final label?)
+                        StatusChip(
+                          label: label,
+                          color: label == 'SOLD OUT'
+                              ? AppColors.muted
+                              : AppColors.coralDark,
+                        ),
+                      IconButton(
+                        tooltip: favorite
+                            ? 'Remove from favorites'
+                            : 'Add to favorites',
+                        onPressed: _toggleFavorite,
+                        icon: Icon(
+                          favorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: favorite ? AppColors.coralDark : null,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -1589,71 +1917,90 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-  Future<void> _showCheckoutResult(
-    CheckoutCompletion result,
-  ) => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (sheetContext) {
-      final paid = result.status == CheckoutPaymentStatus.paid;
-      return Padding(
-        padding: EdgeInsets.fromLTRB(
-          24,
-          6,
-          24,
-          MediaQuery.paddingOf(sheetContext).bottom + 30,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const UxStepper(
-              steps: ['Tickets', 'Details', 'Payment', 'Confirmation'],
-              currentStep: 3,
-            ),
-            const SizedBox(height: 24),
-            Container(
-              width: 78,
-              height: 78,
-              decoration: BoxDecoration(
-                color: paid ? const Color(0xFFE1F7EE) : const Color(0xFFFFF6C9),
-                shape: BoxShape.circle,
+  Future<void> _showCheckoutResult(CheckoutCompletion result) async {
+    if (result.status == CheckoutPaymentStatus.paid) {
+      await HapticFeedback.heavyImpact();
+    } else {
+      await HapticFeedback.mediumImpact();
+    }
+    if (!mounted) return;
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final paid = result.status == CheckoutPaymentStatus.paid;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            6,
+            24,
+            MediaQuery.paddingOf(sheetContext).bottom + 30,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const UxStepper(
+                steps: ['Tickets', 'Details', 'Payment', 'Confirmation'],
+                currentStep: 3,
               ),
-              child: Icon(
-                paid ? Icons.verified_rounded : Icons.schedule_rounded,
-                color: paid ? AppColors.success : AppColors.coralDark,
-                size: 40,
+              const SizedBox(height: 24),
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: .65, end: 1),
+                duration: MediaQuery.disableAnimationsOf(sheetContext)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 520),
+                curve: const Cubic(0.05, 0.7, 0.1, 1),
+                builder: (context, value, child) => Transform.scale(
+                  scale: value,
+                  child: Opacity(opacity: value.clamp(0, 1), child: child),
+                ),
+                child: Container(
+                  width: 78,
+                  height: 78,
+                  decoration: BoxDecoration(
+                    color: paid
+                        ? const Color(0xFFE1F7EE)
+                        : const Color(0xFFFFF6C9),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    paid ? Icons.verified_rounded : Icons.schedule_rounded,
+                    color: paid ? AppColors.success : AppColors.coralDark,
+                    size: 40,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              paid ? 'Payment confirmed' : 'Order is being confirmed',
-              textAlign: TextAlign.center,
-              style: Theme.of(sheetContext).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              paid
-                  ? '${result.orderNumber} is paid. Your tickets are now available in the Ticket wallet.'
-                  : '${result.orderNumber} is saved in Orders. TKTS APP will update it automatically when Paymob confirms the payment.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, height: 1.5),
-            ),
-            const SizedBox(height: 22),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(sheetContext);
-                if (paid) {
-                  Navigator.pop(context);
-                  widget.openTickets();
-                }
-              },
-              child: Text(paid ? 'View my tickets' : 'View status in Orders'),
-            ),
-          ],
-        ),
-      );
-    },
-  );
+              const SizedBox(height: 18),
+              Text(
+                paid ? 'Payment confirmed' : 'Order is being confirmed',
+                textAlign: TextAlign.center,
+                style: Theme.of(sheetContext).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                paid
+                    ? '${result.orderNumber} is paid. Your tickets are now available in the Ticket wallet.'
+                    : '${result.orderNumber} is saved in Orders. TKTS APP will update it automatically when Paymob confirms the payment.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.muted, height: 1.5),
+              ),
+              const SizedBox(height: 22),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  if (paid) {
+                    Navigator.pop(context);
+                    widget.openTickets();
+                  }
+                },
+                child: Text(paid ? 'View my tickets' : 'View status in Orders'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _EventCheckoutBar extends StatelessWidget {
@@ -1754,6 +2101,7 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
   late Future<Map<String, dynamic>> future = _load();
   bool markingRead = false;
   String? error;
+  String filter = 'all';
 
   Future<Map<String, dynamic>> _load() => widget.api.get(
     '/mobile/buyer/notifications',
@@ -1844,6 +2192,11 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                       : const Text('Mark all read'),
                 ),
                 IconButton(
+                  tooltip: 'Notification preferences',
+                  onPressed: _showPreferences,
+                  icon: const Icon(Icons.tune_rounded),
+                ),
+                IconButton(
                   tooltip: 'Close notifications',
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
@@ -1883,18 +2236,48 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                   ),
           ),
           Expanded(
-            child: RefreshIndicator(
+            child: SlktRefresh(
               onRefresh: () async => setState(() => future = _load()),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
                 children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children:
+                          [
+                                'all',
+                                'orders',
+                                'payments',
+                                'transfers',
+                                'promotions',
+                              ]
+                              .map(
+                                (value) => Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    selected: filter == value,
+                                    onSelected: (_) =>
+                                        setState(() => filter = value),
+                                    label: Text(
+                                      '${value[0].toUpperCase()}${value.substring(1)}',
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   AsyncPanel(
                     future: future,
                     onRetry: () => setState(() => future = _load()),
                     skeleton: const SectionSkeleton(cards: 4, cardHeight: 96),
                     builder: (context, response) {
-                      final items = response['data'] as List? ?? const [];
+                      final items = (response['data'] as List? ?? const [])
+                          .where((raw) => _matchesFilter(raw as Map))
+                          .toList();
                       if (items.isEmpty) {
                         return const EmptyState(
                           icon: Icons.notifications_none_rounded,
@@ -1908,6 +2291,14 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                           final item = Map<String, dynamic>.from(raw as Map);
                           final unread = item['read_at'] == null;
                           final action = item['action']?.toString();
+                          final meta = Map<String, dynamic>.from(
+                            item['meta'] as Map? ?? const {},
+                          );
+                          final canOpen =
+                              action != null ||
+                              meta['order_id'] != null ||
+                              meta['ticket_id'] != null ||
+                              meta['event_slug'] != null;
                           final id = item['id']?.toString() ?? '';
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
@@ -1940,12 +2331,18 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                                     : AppColors.paper,
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(28),
-                                  onTap: action == null
+                                  onTap: !canOpen
                                       ? (unread ? () => _markRead(id) : null)
                                       : () async {
                                           if (unread) await _markRead(id);
                                           if (context.mounted) {
-                                            Navigator.pop(context, action);
+                                            Navigator.pop(
+                                              context,
+                                              jsonEncode({
+                                                'action': action,
+                                                'meta': meta,
+                                              }),
+                                            );
                                           }
                                         },
                                   child: Padding(
@@ -2000,7 +2397,7 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                                             ],
                                           ),
                                         ),
-                                        if (action != null)
+                                        if (canOpen)
                                           const Icon(
                                             Icons.chevron_right_rounded,
                                           ),
@@ -2021,6 +2418,98 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
           ),
         ],
       ),
+    ),
+  );
+
+  bool _matchesFilter(Map raw) {
+    if (filter == 'all') return true;
+    final kind = raw['kind']?.toString().toLowerCase() ?? '';
+    return switch (filter) {
+      'orders' => kind.contains('order') || kind.contains('ticket_issued'),
+      'payments' => kind.contains('payment') || kind.contains('refund'),
+      'transfers' => kind.contains('transfer'),
+      'promotions' => kind.contains('promo') || kind.contains('campaign'),
+      _ => true,
+    };
+  }
+
+  Future<void> _showPreferences() async {
+    final values = await BuyerLocalStore.notificationPreferences();
+    if (!mounted) return;
+    final updated = await showModalBottomSheet<Map<String, bool>>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _NotificationPreferences(initial: values),
+    );
+    if (updated == null) return;
+    await BuyerLocalStore.saveNotificationPreferences(updated);
+    try {
+      for (final entry in updated.entries) {
+        await OneSignal.User.addTagWithKey(
+          'notify_${entry.key}',
+          entry.value ? '1' : '0',
+        );
+      }
+    } catch (_) {
+      // Local inbox filtering remains available if push tag sync is offline.
+    }
+  }
+}
+
+class _NotificationPreferences extends StatefulWidget {
+  const _NotificationPreferences({required this.initial});
+
+  final Map<String, bool> initial;
+
+  @override
+  State<_NotificationPreferences> createState() =>
+      _NotificationPreferencesState();
+}
+
+class _NotificationPreferencesState extends State<_NotificationPreferences> {
+  late final values = Map<String, bool>.from(widget.initial);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      22,
+      8,
+      22,
+      MediaQuery.paddingOf(context).bottom + 24,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Notification preferences',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Choose which updates can reach this device.',
+          style: TextStyle(color: AppColors.muted),
+        ),
+        const SizedBox(height: 14),
+        ...values.entries.map(
+          (entry) => SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: entry.value,
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              setState(() => values[entry.key] = value);
+            },
+            title: Text(
+              '${entry.key[0].toUpperCase()}${entry.key.substring(1)}',
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, values),
+          child: const Text('Save preferences'),
+        ),
+      ],
     ),
   );
 }
@@ -2087,10 +2576,8 @@ class TicketsScreen extends StatefulWidget {
 class _TicketsScreenState extends State<TicketsScreen>
     with SingleTickerProviderStateMixin {
   late final tabs = TabController(length: 2, vsync: this);
-  late Future<Map<String, dynamic>> tickets = widget.api.get(
-    '/buyer/tickets',
-    audience: 'buyer',
-  );
+  String ticketFilter = 'upcoming';
+  late Future<Map<String, dynamic>> tickets = _loadTickets();
   late Future<Map<String, dynamic>> transfers = widget.api.get(
     '/buyer/transfers',
     audience: 'buyer',
@@ -2105,15 +2592,76 @@ class _TicketsScreenState extends State<TicketsScreen>
   void _reload() {
     if (!mounted) return;
     setState(() {
-      tickets = widget.api.get('/buyer/tickets', audience: 'buyer');
+      tickets = _loadTickets();
       transfers = widget.api.get('/buyer/transfers', audience: 'buyer');
     });
+  }
+
+  Future<Map<String, dynamic>> _loadTickets() async {
+    try {
+      final responses = await Future.wait([
+        widget.api.get('/buyer/tickets', audience: 'buyer'),
+        widget.api.get('/buyer/transfers', audience: 'buyer'),
+      ]);
+      final response = responses[0];
+      final transferred = (responses[1]['transfers'] as List? ?? const [])
+          .where(
+            (raw) =>
+                (raw as Map)['direction'] == 'sent' &&
+                raw['status'] == 'completed',
+          )
+          .map((raw) {
+            final transfer = Map<String, dynamic>.from(raw as Map);
+            final ticket = Map<String, dynamic>.from(
+              transfer['ticket'] as Map? ?? const {},
+            );
+            return {
+              ...ticket,
+              'id': 'transferred-${transfer['id']}',
+              'status': 'transferred',
+              'recipient_name': transfer['other_party']?['name'],
+            };
+          });
+      final combined = <Object?>[
+        ...List<Object?>.from(response['tickets'] as List? ?? const []),
+        ...transferred,
+      ];
+      await BuyerLocalStore.cacheTickets(combined);
+      return {...response, 'tickets': combined};
+    } catch (_) {
+      final cached = await BuyerLocalStore.cachedTickets();
+      if (cached != null) return {...cached, 'offline': true};
+      rethrow;
+    }
   }
 
   void showTab(int index) {
     if (!mounted || index < 0 || index >= tabs.length) return;
     tabs.animateTo(index);
     _reload();
+  }
+
+  Future<void> openTicket(String ticketId) async {
+    showTab(0);
+    try {
+      final response = await _loadTickets();
+      final items = response['tickets'] as List? ?? const [];
+      final matches = items.where(
+        (raw) => (raw as Map)['id']?.toString() == ticketId,
+      );
+      if (matches.isEmpty || !mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TicketDetailScreen(
+            api: widget.api,
+            ticket: Map<String, dynamic>.from(matches.first as Map),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    }
   }
 
   @override
@@ -2167,37 +2715,61 @@ class _TicketsScreenState extends State<TicketsScreen>
           child: TabBarView(
             controller: tabs,
             children: [
-              RefreshIndicator(
-                onRefresh: () async => setState(
-                  () => tickets = widget.api.get(
-                    '/buyer/tickets',
-                    audience: 'buyer',
-                  ),
-                ),
+              SlktRefresh(
+                onRefresh: () async => setState(() => tickets = _loadTickets()),
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
                   children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: ['upcoming', 'used', 'expired', 'transferred']
+                            .map(
+                              (value) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  selected: ticketFilter == value,
+                                  onSelected: (_) {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => ticketFilter = value);
+                                  },
+                                  label: Text(
+                                    '${value[0].toUpperCase()}${value.substring(1)}',
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     AsyncPanel(
                       future: tickets,
                       builder: (context, response) {
-                        final items = response['tickets'] as List? ?? const [];
+                        final all = (response['tickets'] as List? ?? const [])
+                            .map((raw) => Map<String, dynamic>.from(raw as Map))
+                            .toList();
+                        final items = all.where(_ticketMatchesFilter).toList();
                         if (items.isEmpty) {
-                          return const EmptyState(
+                          return EmptyState(
                             icon: Icons.local_activity_outlined,
-                            title: 'No tickets yet',
+                            title: 'No $ticketFilter tickets',
                             message:
-                                'Tickets appear here as soon as an order is paid.',
+                                'Tickets matching this status will appear here.',
                           );
                         }
                         return Column(
                           children: items.map((raw) {
-                            final ticket = Map<String, dynamic>.from(
-                              raw as Map,
-                            );
+                            final ticket = Map<String, dynamic>.from(raw);
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 16),
                               child: WalletTicketCard(
                                 ticket: ticket,
+                                onQuickQr:
+                                    ticket['qr_raw']?.toString().isNotEmpty ==
+                                        true
+                                    ? () => _showQuickQr(ticket)
+                                    : null,
                                 onTap: () async {
                                   await Navigator.push(
                                     context,
@@ -2209,10 +2781,7 @@ class _TicketsScreenState extends State<TicketsScreen>
                                     ),
                                   );
                                   setState(() {
-                                    tickets = widget.api.get(
-                                      '/buyer/tickets',
-                                      audience: 'buyer',
-                                    );
+                                    tickets = _loadTickets();
                                     transfers = widget.api.get(
                                       '/buyer/transfers',
                                       audience: 'buyer',
@@ -2228,7 +2797,7 @@ class _TicketsScreenState extends State<TicketsScreen>
                   ],
                 ),
               ),
-              RefreshIndicator(
+              SlktRefresh(
                 onRefresh: () async => setState(
                   () => transfers = widget.api.get(
                     '/buyer/transfers',
@@ -2280,6 +2849,27 @@ class _TicketsScreenState extends State<TicketsScreen>
       ],
     ),
   );
+
+  bool _ticketMatchesFilter(Map<String, dynamic> ticket) {
+    final status = ticket['status']?.toString().toLowerCase() ?? 'valid';
+    final eventDate = DateTime.tryParse(ticket['event_date']?.toString() ?? '');
+    return switch (ticketFilter) {
+      'used' => status == 'used',
+      'expired' => status == 'expired' || status == 'cancelled',
+      'transferred' => status.contains('transfer'),
+      _ =>
+        status == 'valid' &&
+            (eventDate == null || eventDate.isAfter(DateTime.now())),
+    };
+  }
+
+  Future<void> _showQuickQr(Map<String, dynamic> ticket) =>
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => _BrightQrSheet(ticket: ticket),
+      );
 }
 
 class WalletTicketCard extends StatelessWidget {
@@ -2287,9 +2877,11 @@ class WalletTicketCard extends StatelessWidget {
     super.key,
     required this.ticket,
     required this.onTap,
+    this.onQuickQr,
   });
   final Map<String, dynamic> ticket;
   final VoidCallback onTap;
+  final VoidCallback? onQuickQr;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -2361,11 +2953,16 @@ class WalletTicketCard extends StatelessWidget {
                           style: const TextStyle(color: Colors.white70),
                         ),
                       ),
-                      const Icon(
-                        Icons.qr_code_2_rounded,
-                        color: Colors.white,
-                        size: 32,
-                      ),
+                      if (onQuickQr != null)
+                        IconButton(
+                          tooltip: 'Show QR',
+                          onPressed: onQuickQr,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white12,
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.qr_code_2_rounded, size: 30),
+                        ),
                     ],
                   ),
                 ],
@@ -2374,6 +2971,87 @@ class WalletTicketCard extends StatelessWidget {
           ],
         ),
       ),
+    ),
+  );
+}
+
+class _BrightQrSheet extends StatelessWidget {
+  const _BrightQrSheet({required this.ticket});
+
+  final Map<String, dynamic> ticket;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      24,
+      12,
+      24,
+      MediaQuery.paddingOf(context).bottom + 28,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          ticket['event_name']?.toString() ?? 'Ticket QR',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${ticket['ticket_type'] ?? 'Admission'} • ${ticket['gate'] ?? 'Gate TBA'}',
+          style: const TextStyle(color: AppColors.muted),
+        ),
+        const SizedBox(height: 18),
+        _BrightQr(data: ticket['qr_raw']?.toString() ?? '', size: 280),
+        const SizedBox(height: 14),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.brightness_high_rounded, size: 18),
+            SizedBox(width: 7),
+            Text('Brightness raised for faster scanning'),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _BrightQr extends StatefulWidget {
+  const _BrightQr({required this.data, required this.size});
+
+  final String data;
+  final double size;
+
+  @override
+  State<_BrightQr> createState() => _BrightQrState();
+}
+
+class _BrightQrState extends State<_BrightQr> {
+  @override
+  void initState() {
+    super.initState();
+    ScreenBrightness.instance.setApplicationScreenBrightness(1);
+    HapticFeedback.mediumImpact();
+  }
+
+  @override
+  void dispose() {
+    ScreenBrightness.instance.resetApplicationScreenBrightness();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: QrImageView(
+      data: widget.data,
+      size: widget.size,
+      errorCorrectionLevel: QrErrorCorrectLevel.M,
     ),
   );
 }
@@ -2417,18 +3095,7 @@ class TicketDetailScreen extends StatelessWidget {
                 style: const TextStyle(color: Colors.white70, height: 1.5),
               ),
               const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: QrImageView(
-                  data: ticket['qr_raw']?.toString() ?? '',
-                  size: 230,
-                  errorCorrectionLevel: QrErrorCorrectLevel.M,
-                ),
-              ),
+              _BrightQr(data: ticket['qr_raw']?.toString() ?? '', size: 230),
               const SizedBox(height: 12),
               const Text(
                 'Present this QR at the venue entrance',
@@ -2592,9 +3259,14 @@ class _TransferSheetState extends State<TransferSheet> {
             const SizedBox(height: 10),
             TextField(
               controller: recipient,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Account code, email or mobile',
-                prefixIcon: Icon(Icons.person_search_rounded),
+                prefixIcon: const Icon(Icons.person_search_rounded),
+                suffixIcon: IconButton(
+                  tooltip: 'Choose from contacts',
+                  onPressed: busy ? null : _pickContact,
+                  icon: const Icon(Icons.contacts_rounded),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -2644,9 +3316,18 @@ class _TransferSheetState extends State<TransferSheet> {
               Card(
                 color: const Color(0xFFFFEEE6),
                 child: ListTile(
-                  leading: const CircleAvatar(
+                  leading: CircleAvatar(
                     backgroundColor: AppColors.coral,
-                    child: Icon(Icons.person_rounded, color: Colors.white),
+                    backgroundImage:
+                        preview!['avatar_url']?.toString().isNotEmpty == true
+                        ? NetworkImage(preview!['avatar_url'].toString())
+                        : null,
+                    child: preview!['avatar_url']?.toString().isNotEmpty == true
+                        ? null
+                        : Text(
+                            _initials(preview!['name']),
+                            style: const TextStyle(color: Colors.white),
+                          ),
                   ),
                   title: Text(
                     preview!['name']?.toString() ?? 'Registered buyer',
@@ -2713,7 +3394,38 @@ class _TransferSheetState extends State<TransferSheet> {
     }
   }
 
+  Future<void> _pickContact() async {
+    try {
+      final status = await FlutterContacts.permissions.request(
+        PermissionType.read,
+      );
+      if (status != PermissionStatus.granted) {
+        if (mounted) {
+          setState(
+            () => error =
+                'Contacts permission is needed only to choose a recipient.',
+          );
+        }
+        return;
+      }
+      final contact = await FlutterContacts.native.showPicker(
+        properties: {ContactProperty.phone},
+      );
+      final phones = contact?.phones;
+      final phone = phones == null || phones.isEmpty
+          ? null
+          : phones.first.number.trim();
+      if (phone == null || phone.isEmpty || !mounted) return;
+      recipient.text = phone;
+      HapticFeedback.selectionClick();
+      await _lookup();
+    } catch (caught) {
+      if (mounted) setState(() => error = errorMessage(caught));
+    }
+  }
+
   Future<void> _send() async {
+    HapticFeedback.mediumImpact();
     setState(() {
       busy = true;
       error = null;
@@ -2731,6 +3443,77 @@ class _TransferSheetState extends State<TransferSheet> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+}
+
+class _TransferTimeline extends StatelessWidget {
+  const _TransferTimeline({required this.transfer, required this.incoming});
+
+  final Map<String, dynamic> transfer;
+  final bool incoming;
+
+  @override
+  Widget build(BuildContext context) {
+    final completed = transfer['completed_at'] != null;
+    final recipientApproved = transfer['recipient_approved_at'] != null;
+    final status = transfer['status']?.toString() ?? 'pending';
+    final stopped = ['declined', 'cancelled', 'expired'].contains(status);
+    final steps = <(String, bool)>[
+      ('Sender approved', transfer['sender_approved_at'] != null),
+      (incoming ? 'Your approval' : 'Recipient approval', recipientApproved),
+      (stopped ? status.toUpperCase() : 'Ownership moved', completed),
+    ];
+    return Row(
+      children: List.generate(steps.length, (index) {
+        final active = steps[index].$2;
+        return Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    AnimatedContainer(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 240),
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.success : AppColors.line,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        active ? Icons.check_rounded : Icons.more_horiz_rounded,
+                        size: 15,
+                        color: active ? Colors.white : AppColors.muted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      steps[index].$1,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: active ? AppColors.ink : AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (index < steps.length - 1)
+                Container(
+                  width: 20,
+                  height: 2,
+                  color: steps[index + 1].$2
+                      ? AppColors.success
+                      : AppColors.line,
+                ),
+            ],
+          ),
+        );
+      }),
+    );
   }
 }
 
@@ -2841,6 +3624,8 @@ class _TransferCardState extends State<TransferCard> {
                   style: const TextStyle(color: AppColors.muted, fontSize: 12),
                 ),
               ],
+              const SizedBox(height: 16),
+              _TransferTimeline(transfer: widget.transfer, incoming: incoming),
               if (actionError != null) ...[
                 const SizedBox(height: 12),
                 Container(
@@ -2898,6 +3683,7 @@ class _TransferCardState extends State<TransferCard> {
   }
 
   Future<void> _act(String action) async {
+    HapticFeedback.mediumImpact();
     setState(() {
       busy = true;
       actionError = null;
@@ -2964,7 +3750,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    child: RefreshIndicator(
+    child: SlktRefresh(
       onRefresh: () async => setState(
         () =>
             future = widget.api.get('/mobile/buyer/orders', audience: 'buyer'),
@@ -3118,7 +3904,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Order details')),
-    body: RefreshIndicator(
+    body: SlktRefresh(
       onRefresh: () async => _reload(),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 36),
@@ -4163,22 +4949,81 @@ void _openEvent(
   Map<String, dynamic> event,
   VoidCallback onPurchaseCompleted,
   VoidCallback openTickets,
-) => Navigator.push(
-  context,
-  SlktEventPageRoute(
-    settings: RouteSettings(name: '/events/${event['slug']}'),
-    builder: (_) => EventDetailScreen(
-      api: api,
-      slug: event['slug'].toString(),
-      preview: event,
-      onPurchaseCompleted: onPurchaseCompleted,
-      openTickets: openTickets,
+) {
+  HapticFeedback.selectionClick();
+  unawaited(BuyerLocalStore.rememberEvent(event));
+  Navigator.push(
+    context,
+    SlktEventPageRoute(
+      settings: RouteSettings(name: '/events/${event['slug']}'),
+      builder: (_) => EventDetailScreen(
+        api: api,
+        slug: event['slug'].toString(),
+        preview: event,
+        onPurchaseCompleted: onPurchaseCompleted,
+        openTickets: openTickets,
+      ),
     ),
-  ),
-);
+  );
+}
 
 String _eventHeroTag(Map<String, dynamic> event) =>
+    event['_hero_tag']?.toString() ??
     'slkt-event-banner-${event['slug'] ?? event['id'] ?? event['name']}';
+
+String _eventPriceLabel(Map<String, dynamic> event) {
+  final types = (event['ticket_types'] as List? ?? const [])
+      .map((raw) => Map<String, dynamic>.from(raw as Map))
+      .toList();
+  if (types.isEmpty) return 'Tickets coming soon';
+  final prices = types
+      .map((type) => (type['early_bird_price'] ?? type['price']) as num?)
+      .whereType<num>()
+      .map((value) => value.toDouble())
+      .toList();
+  if (prices.isEmpty) return 'View ticket options';
+  prices.sort();
+  final currency = event['currency']?.toString() ?? 'EGP';
+  final minimum = prices.first;
+  final formatted = minimum == minimum.roundToDouble()
+      ? minimum.toStringAsFixed(0)
+      : minimum.toStringAsFixed(2);
+  return 'Starts from $formatted $currency';
+}
+
+String? _eventAvailabilityLabel(Map<String, dynamic> event) {
+  final types = event['ticket_types'] as List? ?? const [];
+  if (types.isEmpty) return null;
+  final available = types.fold<int>(
+    0,
+    (sum, raw) => sum + ((raw as Map)['available'] as num? ?? 0).toInt(),
+  );
+  if (available <= 0) return 'SOLD OUT';
+  if (available <= 10) return '$available LEFT';
+  return null;
+}
+
+String _eventNextSession(Map<String, dynamic> event) {
+  final sessions =
+      (event['sessions'] as List? ?? const [])
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .where(
+            (session) =>
+                DateTime.tryParse(
+                  session['starts_at']?.toString() ?? '',
+                )?.isAfter(DateTime.now()) ??
+                false,
+          )
+          .toList()
+        ..sort(
+          (a, b) => DateTime.parse(
+            a['starts_at'].toString(),
+          ).compareTo(DateTime.parse(b['starts_at'].toString())),
+        );
+  return sessions.isEmpty
+      ? _date(event['starts_at'])
+      : _date(sessions.first['starts_at']);
+}
 
 String _firstName(Object? value) {
   final text = value?.toString().trim() ?? '';

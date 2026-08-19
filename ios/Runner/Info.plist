@@ -18,6 +18,8 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>TKTS APP</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Choose a contact to transfer a ticket to their registered TKTS APP account.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

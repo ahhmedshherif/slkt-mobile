@@ -1,10 +1,87 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../core/api_client.dart';
 import '../core/theme.dart';
+
+class SlktRefresh extends StatefulWidget {
+  const SlktRefresh({super.key, required this.onRefresh, required this.child});
+
+  final RefreshCallback onRefresh;
+  final Widget child;
+
+  @override
+  State<SlktRefresh> createState() => _SlktRefreshState();
+}
+
+class _SlktRefreshState extends State<SlktRefresh> {
+  RefreshIndicatorStatus? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = status != null && status != RefreshIndicatorStatus.done;
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    return Stack(
+      alignment: Alignment.topCenter,
+      children: [
+        RefreshIndicator.noSpinner(
+          onRefresh: () async {
+            HapticFeedback.selectionClick();
+            await widget.onRefresh();
+          },
+          onStatusChange: (value) => setState(() => status = value),
+          child: widget.child,
+        ),
+        IgnorePointer(
+          child: SafeArea(
+            bottom: false,
+            child: AnimatedSlide(
+              duration: reduced
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
+              curve: const Cubic(0.2, 0, 0, 1),
+              offset: visible ? Offset.zero : const Offset(0, -1.6),
+              child: AnimatedScale(
+                duration: reduced
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                scale: visible ? 1 : .8,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 6),
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.black,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x33000000), blurRadius: 18),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: status == RefreshIndicatorStatus.refresh
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: AppColors.yellow,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: AppColors.yellow,
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key, this.dark = false, this.height = 38});

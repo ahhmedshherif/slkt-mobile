@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:evnts_app/src/core/api_client.dart';
+import 'package:evnts_app/src/core/buyer_local_store.dart';
 import 'package:evnts_app/src/core/session_controller.dart';
 import 'package:evnts_app/src/core/theme.dart';
 import 'package:evnts_app/src/features/auth/auth_screen.dart';
@@ -17,6 +19,28 @@ void main() {
   testWidgets('Flutter test environment is ready', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: Text('TKTS APP')));
     expect(find.text('TKTS APP'), findsOneWidget);
+  });
+
+  test('buyer cart, favorites and recent events persist locally', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    await BuyerLocalStore.saveCart(
+      'event-one',
+      quantities: {'10': 2},
+      promo: 'SAVE10',
+    );
+    final cart = await BuyerLocalStore.cart('event-one');
+    expect(cart?['promo'], 'SAVE10');
+    expect(cart?['quantities']['10'], 2);
+
+    expect(await BuyerLocalStore.toggleFavorite('event-one'), isTrue);
+    expect(await BuyerLocalStore.favorites(), contains('event-one'));
+
+    await BuyerLocalStore.rememberEvent({
+      'slug': 'event-one',
+      'name': 'Event One',
+    });
+    expect((await BuyerLocalStore.recentEvents()).first['slug'], 'event-one');
   });
 
   testWidgets('cinematic splash renders TKTS APP brand sequence', (

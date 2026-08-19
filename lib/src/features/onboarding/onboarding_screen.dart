@@ -88,14 +88,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ),
           Expanded(
-            child: PageView.builder(
-              controller: controller,
-              itemCount: pages.length,
-              onPageChanged: (value) => setState(() => page = value),
-              itemBuilder: (context, index) => _OnboardingPage(
-                data: pages[index],
-                active: index == page,
-                index: index,
+            child: ClipRect(
+              child: PageView.builder(
+                clipBehavior: Clip.hardEdge,
+                controller: controller,
+                itemCount: pages.length,
+                onPageChanged: (value) => setState(() => page = value),
+                itemBuilder: (context, index) => _OnboardingPage(
+                  data: pages[index],
+                  active: index == page,
+                  index: index,
+                ),
               ),
             ),
           ),
