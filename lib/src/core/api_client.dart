@@ -22,14 +22,16 @@ class ApiClient {
             'API_BASE_URL',
             defaultValue: 'https://slktegy.com/api/v1',
           ),
-          connectTimeout: const Duration(seconds: 20),
+          connectTimeout: const Duration(seconds: 12),
           receiveTimeout: const Duration(seconds: 35),
           headers: const {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
           },
         ),
-      );
+      ) {
+    dio.interceptors.add(_GetConnectionRetryInterceptor(dio));
+  }
 
   static const storage = FlutterSecureStorage();
   final Dio dio;
@@ -103,13 +105,53 @@ class ApiClient {
         }
       } else if (error.type == DioExceptionType.connectionError ||
           error.type == DioExceptionType.connectionTimeout) {
-        message = 'Cannot reach TKTS APP. Check your connection and try again.';
+        message =
+            'TKTS APP server is temporarily unavailable. Your internet is connected; please retry in a moment.';
       }
       throw ApiException(
         message,
         statusCode: response?.statusCode,
         fields: fields,
       );
+    }
+  }
+}
+
+bool shouldRetryApiRequest(String method, DioExceptionType type, int attempt) =>
+    method.toUpperCase() == 'GET' &&
+    attempt < 2 &&
+    (type == DioExceptionType.connectionError ||
+        type == DioExceptionType.connectionTimeout);
+
+class _GetConnectionRetryInterceptor extends Interceptor {
+  _GetConnectionRetryInterceptor(this.client);
+
+  final Dio client;
+
+  @override
+  Future<void> onError(
+    DioException error,
+    ErrorInterceptorHandler handler,
+  ) async {
+    final attempt =
+        (error.requestOptions.extra['connection_retry'] as int?) ?? 0;
+    if (!shouldRetryApiRequest(
+      error.requestOptions.method,
+      error.type,
+      attempt,
+    )) {
+      handler.next(error);
+      return;
+    }
+
+    await Future<void>.delayed(Duration(milliseconds: 650 * (attempt + 1)));
+    try {
+      final request = error.requestOptions;
+      request.extra['connection_retry'] = attempt + 1;
+      final response = await client.fetch<Object?>(request);
+      handler.resolve(response);
+    } on DioException catch (nextError) {
+      handler.next(nextError);
     }
   }
 }

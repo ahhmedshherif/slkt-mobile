@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -183,6 +184,25 @@ void main() {
     );
     expect(
       isCheckoutReturnUrl('http://slktegy.com$path?success=true', path),
+      isFalse,
+    );
+  });
+
+  test('API retries transient GET failures without replaying mutations', () {
+    expect(
+      shouldRetryApiRequest('GET', DioExceptionType.connectionTimeout, 0),
+      isTrue,
+    );
+    expect(
+      shouldRetryApiRequest('GET', DioExceptionType.connectionError, 1),
+      isTrue,
+    );
+    expect(
+      shouldRetryApiRequest('GET', DioExceptionType.connectionError, 2),
+      isFalse,
+    );
+    expect(
+      shouldRetryApiRequest('POST', DioExceptionType.connectionError, 0),
       isFalse,
     );
   });
