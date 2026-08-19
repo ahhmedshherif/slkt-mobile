@@ -365,18 +365,22 @@ class AsyncPanel extends StatelessWidget {
     required this.builder,
     this.emptyMessage = 'Nothing here yet.',
     this.animateResult = true,
+    this.onRetry,
+    this.skeleton,
   });
   final Future<dynamic> future;
   final Widget Function(BuildContext, dynamic) builder;
   final String emptyMessage;
   final bool animateResult;
+  final VoidCallback? onRetry;
+  final Widget? skeleton;
 
   @override
   Widget build(BuildContext context) => FutureBuilder<dynamic>(
     future: future,
     builder: (context, snapshot) {
       if (snapshot.connectionState != ConnectionState.done) {
-        return const SkeletonList();
+        return skeleton ?? const SkeletonList();
       }
       if (snapshot.hasError) {
         final error = snapshot.error;
@@ -386,11 +390,123 @@ class AsyncPanel extends StatelessWidget {
           message: error is ApiException
               ? error.message
               : 'Check your connection and try again.',
+          action: onRetry == null
+              ? null
+              : FilledButton.tonalIcon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Try again'),
+                ),
         );
       }
       final child = builder(context, snapshot.data);
       return animateResult ? MotionEntrance(child: child) : child;
     },
+  );
+}
+
+class UxStepper extends StatelessWidget {
+  const UxStepper({super.key, required this.steps, required this.currentStep});
+
+  final List<String> steps;
+  final int currentStep;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      label:
+          'Step ${currentStep + 1} of ${steps.length}: ${steps[currentStep]}',
+      child: Row(
+        children: List.generate(steps.length, (index) {
+          final active = index <= currentStep;
+          return Expanded(
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: reduced
+                      ? Duration.zero
+                      : const Duration(milliseconds: 260),
+                  curve: const Cubic(.2, 0, 0, 1),
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: active ? AppColors.black : const Color(0xFFE5DFDA),
+                    shape: BoxShape.circle,
+                  ),
+                  child: index < currentStep
+                      ? const Icon(
+                          Icons.check_rounded,
+                          color: AppColors.yellow,
+                          size: 17,
+                        )
+                      : Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            color: active ? AppColors.yellow : AppColors.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                ),
+                if (index < steps.length - 1)
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: reduced
+                          ? Duration.zero
+                          : const Duration(milliseconds: 260),
+                      height: 2,
+                      margin: const EdgeInsets.symmetric(horizontal: 5),
+                      color: index < currentStep
+                          ? AppColors.black
+                          : const Color(0xFFE5DFDA),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class SectionSkeleton extends StatelessWidget {
+  const SectionSkeleton({super.key, this.cards = 3, this.cardHeight = 168});
+
+  final int cards;
+  final double cardHeight;
+
+  @override
+  Widget build(BuildContext context) => Shimmer.fromColors(
+    baseColor: const Color(0xFFE7E1DC),
+    highlightColor: const Color(0xFFF9F6F3),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 148,
+          height: 22,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        const SizedBox(height: 14),
+        ...List.generate(
+          cards,
+          (_) => Container(
+            height: cardHeight,
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        ),
+      ],
+    ),
   );
 }
 

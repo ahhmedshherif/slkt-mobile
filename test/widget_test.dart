@@ -10,6 +10,7 @@ import 'package:evnts_app/src/features/auth/auth_screen.dart';
 import 'package:evnts_app/src/app.dart';
 import 'package:evnts_app/src/features/buyer/buyer_shell.dart';
 import 'package:evnts_app/src/features/buyer/checkout_flow.dart';
+import 'package:evnts_app/src/features/onboarding/onboarding_screen.dart';
 import 'package:evnts_app/src/widgets/common.dart';
 
 void main() {
@@ -43,6 +44,32 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('onboarding explains discover, booking and ticket delivery', (
+    tester,
+  ) async {
+    var completed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTheme(),
+        home: OnboardingScreen(
+          onComplete: () async {
+            completed = true;
+          },
+        ),
+      ),
+    );
+
+    expect(find.text('Find events worth going out for.'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose your ticket. Pay securely.'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your ticket is ready at the door.'), findsOneWidget);
+    await tester.tap(find.text('Start exploring'));
+    expect(completed, isTrue);
   });
 
   testWidgets('tab transition fully fades the previous page', (tester) async {
@@ -100,7 +127,14 @@ void main() {
     expect(find.text('Platinum'), findsWidgets);
     expect(find.text('Gold'), findsWidgets);
     expect(find.text('Silver'), findsWidgets);
-    expect(find.byKey(const ValueKey('empty-cart')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('create-order-and-pay')),
+          )
+          .onPressed,
+      isNull,
+    );
 
     await tester.tap(find.byIcon(Icons.add_rounded).first);
     await tester.pump(const Duration(milliseconds: 400));

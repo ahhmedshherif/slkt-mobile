@@ -43,6 +43,8 @@ ThemeData buildTheme() {
   final base = ThemeData(useMaterial3: true, brightness: Brightness.light);
   final body = GoogleFonts.plusJakartaSansTextTheme(base.textTheme);
   return base.copyWith(
+    materialTapTargetSize: MaterialTapTargetSize.padded,
+    visualDensity: VisualDensity.standard,
     scaffoldBackgroundColor: AppColors.canvas,
     colorScheme: ColorScheme.fromSeed(
       seedColor: AppColors.coral,
@@ -104,6 +106,22 @@ ThemeData buildTheme() {
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
         animationDuration: const Duration(milliseconds: 180),
       ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(44, 48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        minimumSize: const Size(44, 44),
+        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
     ),
     navigationBarTheme: NavigationBarThemeData(
       height: 72,

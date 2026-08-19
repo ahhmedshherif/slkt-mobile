@@ -198,16 +198,25 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<Map<String, dynamic>> future = _load();
 
   Future<Map<String, dynamic>> _load() async {
-    final events = await widget.api.get(
-      '/mobile/events',
-      query: {'per_page': 12},
-    );
+    final responses = await Future.wait([
+      widget.api.get('/mobile/events', query: {'per_page': 16}),
+      widget.api.get(
+        '/mobile/events',
+        query: {'per_page': 12, 'recommended': true},
+      ),
+      widget.api.get(
+        '/mobile/events',
+        query: {'per_page': 8, 'period': 'past'},
+      ),
+    ]);
     Map<String, dynamic> tickets = const {};
     try {
       tickets = await widget.api.get('/buyer/tickets', audience: 'buyer');
     } catch (_) {}
     return {
-      'events': events['data'] ?? [],
+      'upcoming': responses[0]['data'] ?? [],
+      'recommended': responses[1]['data'] ?? [],
+      'past': responses[2]['data'] ?? [],
       'tickets': tickets['tickets'] ?? [],
     };
   }
@@ -254,10 +263,22 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 24),
           AsyncPanel(
             future: future,
+            skeleton: const SectionSkeleton(cards: 3, cardHeight: 190),
+            onRetry: () => setState(() => future = _load()),
             builder: (context, raw) {
               final data = Map<String, dynamic>.from(raw as Map);
-              final events = List<Map<String, dynamic>>.from(
-                (data['events'] as List).map(
+              final upcoming = List<Map<String, dynamic>>.from(
+                (data['upcoming'] as List).map(
+                  (e) => Map<String, dynamic>.from(e as Map),
+                ),
+              );
+              final recommended = List<Map<String, dynamic>>.from(
+                (data['recommended'] as List).map(
+                  (e) => Map<String, dynamic>.from(e as Map),
+                ),
+              );
+              final past = List<Map<String, dynamic>>.from(
+                (data['past'] as List).map(
                   (e) => Map<String, dynamic>.from(e as Map),
                 ),
               );
@@ -269,38 +290,59 @@ class _HomeScreenState extends State<HomeScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _QuickSummary(events: events, tickets: tickets),
+                  _QuickSummary(events: upcoming, tickets: tickets),
                   const SizedBox(height: 28),
-                  SectionTitle(
-                    title: 'Hot right now',
-                    action: 'View all',
-                    onTap: widget.explore,
-                  ),
-                  const SizedBox(height: 14),
-                  if (events.isEmpty)
-                    const EmptyState(
+                  if (upcoming.isEmpty)
+                    EmptyState(
                       icon: Icons.event_busy_rounded,
                       title: 'Events are on the way',
                       message: 'Approved upcoming events will appear here.',
+                      action: FilledButton.tonalIcon(
+                        onPressed: widget.explore,
+                        icon: const Icon(Icons.explore_rounded),
+                        label: const Text('Explore events'),
+                      ),
                     )
-                  else
-                    ...events
-                        .take(4)
-                        .map(
-                          (event) => Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: EventCard(
-                              event: event,
-                              onTap: () => _openEvent(
-                                context,
-                                widget.api,
-                                event,
-                                widget.purchaseCompleted,
-                                widget.openTickets,
-                              ),
-                            ),
-                          ),
-                        ),
+                  else ...[
+                    _EventRail(
+                      title: 'Upcoming events',
+                      subtitle: 'Your next night out',
+                      events: upcoming.take(8).toList(),
+                      onViewAll: widget.explore,
+                      onOpen: _open,
+                    ),
+                    if (_nearby(upcoming).isNotEmpty) ...[
+                      const SizedBox(height: 30),
+                      _EventRail(
+                        title: 'Near you',
+                        subtitle:
+                            'Around ${_nearby(upcoming).first['venue']?['city'] ?? 'your city'}',
+                        events: _nearby(upcoming).take(6).toList(),
+                        onViewAll: widget.explore,
+                        onOpen: _open,
+                      ),
+                    ],
+                    if (recommended.isNotEmpty) ...[
+                      const SizedBox(height: 30),
+                      _EventRail(
+                        title: 'Recommended',
+                        subtitle: 'Popular picks for you',
+                        events: recommended.take(8).toList(),
+                        onViewAll: widget.explore,
+                        onOpen: _open,
+                      ),
+                    ],
+                    if (past.isNotEmpty) ...[
+                      const SizedBox(height: 30),
+                      _EventRail(
+                        title: 'Past events',
+                        subtitle: 'Highlights from before',
+                        events: past.take(6).toList(),
+                        onViewAll: widget.explore,
+                        onOpen: _open,
+                      ),
+                    ],
+                  ],
                 ],
               );
             },
@@ -308,6 +350,31 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     ),
+  );
+
+  List<Map<String, dynamic>> _nearby(List<Map<String, dynamic>> events) {
+    final cities = events
+        .map((event) => event['venue']?['city']?.toString().trim())
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toList();
+    final city = cities.isEmpty ? null : cities.first;
+    if (city == null) return const [];
+    return events
+        .where(
+          (event) =>
+              event['venue']?['city']?.toString().toLowerCase() ==
+              city.toLowerCase(),
+        )
+        .toList();
+  }
+
+  void _open(Map<String, dynamic> event) => _openEvent(
+    context,
+    widget.api,
+    event,
+    widget.purchaseCompleted,
+    widget.openTickets,
   );
 }
 
@@ -396,6 +463,121 @@ class SummaryPill extends StatelessWidget {
   );
 }
 
+class _EventRail extends StatelessWidget {
+  const _EventRail({
+    required this.title,
+    required this.subtitle,
+    required this.events,
+    required this.onOpen,
+    required this.onViewAll,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Map<String, dynamic>> events;
+  final ValueChanged<Map<String, dynamic>> onOpen;
+  final VoidCallback onViewAll;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SectionTitle(title: title, action: 'View all', onTap: onViewAll),
+      Text(subtitle, style: const TextStyle(color: AppColors.muted)),
+      const SizedBox(height: 14),
+      SizedBox(
+        height: 272,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          itemCount: events.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemBuilder: (context, index) => EventPosterCard(
+            event: events[index],
+            onTap: () => onOpen(events[index]),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class EventPosterCard extends StatelessWidget {
+  const EventPosterCard({super.key, required this.event, required this.onTap});
+
+  final Map<String, dynamic> event;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 208,
+    child: Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  EventImage(url: event['image_url']?.toString()),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0x80000000)],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 12,
+                    bottom: 10,
+                    child: StatusChip(
+                      label: event['has_ended'] == true
+                          ? 'ENDED'
+                          : _date(event['starts_at']),
+                      color: event['has_ended'] == true
+                          ? Colors.white
+                          : AppColors.yellow,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event['name']?.toString() ?? 'Event',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    event['venue']?['name']?.toString() ?? 'Venue TBA',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({
     super.key,
@@ -414,16 +596,56 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   final search = TextEditingController();
   String query = '';
-  String? category;
+  int? categoryId;
+  int? venueId;
+  int? organizerId;
+  DateTimeRange? dateRange;
+  double? minPrice;
+  double? maxPrice;
   late Future<Map<String, dynamic>> categories = widget.api.get(
     '/mobile/categories',
   );
+  late Future<List<Map<String, dynamic>>> filterOptions = _loadFilterOptions();
+
+  Future<List<Map<String, dynamic>>> _loadFilterOptions() async {
+    final responses = await Future.wait([
+      widget.api.get('/mobile/venues'),
+      widget.api.get('/mobile/organizers'),
+    ]);
+    return [
+      ...((responses[0]['data'] as List? ?? const []).map(
+        (raw) => {'kind': 'venue', ...Map<String, dynamic>.from(raw as Map)},
+      )),
+      ...((responses[1]['data'] as List? ?? const []).map(
+        (raw) => {
+          'kind': 'organizer',
+          ...Map<String, dynamic>.from(raw as Map),
+        },
+      )),
+    ];
+  }
+
+  int get activeFilterCount => [
+    venueId,
+    organizerId,
+    dateRange,
+    minPrice,
+    maxPrice,
+  ].where((value) => value != null).length;
 
   Future<Map<String, dynamic>> _events() => widget.api.get(
     '/mobile/events',
     query: {
       if (query.isNotEmpty) 'search': query,
-      if (category != null) 'category': category,
+      if (categoryId != null) 'category_id': categoryId,
+      if (venueId != null) 'venue_id': venueId,
+      if (organizerId != null) 'organizer_id': organizerId,
+      if (dateRange != null)
+        'date_from': DateFormat('yyyy-MM-dd').format(dateRange!.start),
+      if (dateRange != null)
+        'date_to': DateFormat('yyyy-MM-dd').format(dateRange!.end),
+      if (minPrice != null) 'min_price': minPrice,
+      if (maxPrice != null) 'max_price': maxPrice,
       'per_page': 30,
     },
   );
@@ -454,7 +676,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openFilters,
+                icon: const Icon(Icons.tune_rounded),
+                label: Text(
+                  activeFilterCount == 0
+                      ? 'Filters'
+                      : 'Filters ($activeFilterCount)',
+                ),
+              ),
+            ),
+            if (activeFilterCount > 0) ...[
+              const SizedBox(width: 10),
+              TextButton(onPressed: _clearFilters, child: const Text('Clear')),
+            ],
+          ],
+        ),
+        const SizedBox(height: 14),
         FutureBuilder<Map<String, dynamic>>(
           future: categories,
           builder: (context, snapshot) {
@@ -465,8 +707,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 children: [
                   ChoiceChip(
                     label: const Text('All'),
-                    selected: category == null,
-                    onSelected: (_) => setState(() => category = null),
+                    selected: categoryId == null,
+                    onSelected: (_) => setState(() => categoryId = null),
                   ),
                   const SizedBox(width: 8),
                   ...items.map((raw) {
@@ -475,9 +717,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
                         label: Text(item['name'].toString()),
-                        selected: category == item['slug'],
-                        onSelected: (_) =>
-                            setState(() => category = item['slug'].toString()),
+                        selected: categoryId == (item['id'] as num?)?.toInt(),
+                        onSelected: (_) => setState(
+                          () => categoryId = (item['id'] as num).toInt(),
+                        ),
                       ),
                     );
                   }),
@@ -488,8 +731,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         const SizedBox(height: 22),
         AsyncPanel(
-          key: ValueKey('$query-$category'),
+          key: ValueKey(
+            '$query-$categoryId-$venueId-$organizerId-$dateRange-$minPrice-$maxPrice',
+          ),
           future: _events(),
+          onRetry: () => setState(() {}),
           builder: (context, response) {
             final events = response['data'] as List? ?? const [];
             if (events.isEmpty) {
@@ -522,6 +768,234 @@ class _ExploreScreenState extends State<ExploreScreen> {
       ],
     ),
   );
+
+  void _clearFilters() => setState(() {
+    venueId = null;
+    organizerId = null;
+    dateRange = null;
+    minPrice = null;
+    maxPrice = null;
+  });
+
+  Future<void> _openFilters() async {
+    try {
+      final options = await filterOptions;
+      if (!mounted) return;
+      final result = await showModalBottomSheet<_ExploreFilterResult>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (context) => _ExploreFiltersSheet(
+          options: options,
+          venueId: venueId,
+          organizerId: organizerId,
+          dateRange: dateRange,
+          minPrice: minPrice,
+          maxPrice: maxPrice,
+        ),
+      );
+      if (result == null || !mounted) return;
+      setState(() {
+        venueId = result.venueId;
+        organizerId = result.organizerId;
+        dateRange = result.dateRange;
+        minPrice = result.minPrice;
+        maxPrice = result.maxPrice;
+      });
+    } catch (error) {
+      if (mounted) showError(context, error);
+    }
+  }
+}
+
+class _ExploreFilterResult {
+  const _ExploreFilterResult({
+    this.venueId,
+    this.organizerId,
+    this.dateRange,
+    this.minPrice,
+    this.maxPrice,
+  });
+
+  final int? venueId;
+  final int? organizerId;
+  final DateTimeRange? dateRange;
+  final double? minPrice;
+  final double? maxPrice;
+}
+
+class _ExploreFiltersSheet extends StatefulWidget {
+  const _ExploreFiltersSheet({
+    required this.options,
+    this.venueId,
+    this.organizerId,
+    this.dateRange,
+    this.minPrice,
+    this.maxPrice,
+  });
+
+  final List<Map<String, dynamic>> options;
+  final int? venueId;
+  final int? organizerId;
+  final DateTimeRange? dateRange;
+  final double? minPrice;
+  final double? maxPrice;
+
+  @override
+  State<_ExploreFiltersSheet> createState() => _ExploreFiltersSheetState();
+}
+
+class _ExploreFiltersSheetState extends State<_ExploreFiltersSheet> {
+  late int? venueId = widget.venueId;
+  late int? organizerId = widget.organizerId;
+  late DateTimeRange? dateRange = widget.dateRange;
+  late final minPrice = TextEditingController(
+    text: widget.minPrice?.toStringAsFixed(0) ?? '',
+  );
+  late final maxPrice = TextEditingController(
+    text: widget.maxPrice?.toStringAsFixed(0) ?? '',
+  );
+
+  List<Map<String, dynamic>> get venues =>
+      widget.options.where((item) => item['kind'] == 'venue').toList();
+  List<Map<String, dynamic>> get organizers =>
+      widget.options.where((item) => item['kind'] == 'organizer').toList();
+
+  @override
+  void dispose() {
+    minPrice.dispose();
+    maxPrice.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      20,
+      4,
+      20,
+      MediaQuery.viewInsetsOf(context).bottom + 24,
+    ),
+    child: SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Filter events',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Narrow results by date, venue, organizer and price.',
+            style: TextStyle(color: AppColors.muted),
+          ),
+          const SizedBox(height: 20),
+          DropdownButtonFormField<int?>(
+            initialValue: venueId,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Venue'),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Any venue')),
+              ...venues.map(
+                (venue) => DropdownMenuItem(
+                  value: (venue['id'] as num).toInt(),
+                  child: Text(
+                    venue['name']?.toString() ?? 'Venue',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+            onChanged: (value) => setState(() => venueId = value),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int?>(
+            initialValue: organizerId,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Organizer'),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Any organizer')),
+              ...organizers.map(
+                (organizer) => DropdownMenuItem(
+                  value: (organizer['id'] as num).toInt(),
+                  child: Text(
+                    organizer['name']?.toString() ?? 'Organizer',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+            onChanged: (value) => setState(() => organizerId = value),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _pickDates,
+            icon: const Icon(Icons.date_range_rounded),
+            label: Text(
+              dateRange == null
+                  ? 'Any date'
+                  : '${DateFormat('MMM d').format(dateRange!.start)} – ${DateFormat('MMM d').format(dateRange!.end)}',
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              alignment: Alignment.centerLeft,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: minPrice,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Min price'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: maxPrice,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(labelText: 'Max price'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(
+              context,
+              _ExploreFilterResult(
+                venueId: venueId,
+                organizerId: organizerId,
+                dateRange: dateRange,
+                minPrice: double.tryParse(minPrice.text.trim()),
+                maxPrice: double.tryParse(maxPrice.text.trim()),
+              ),
+            ),
+            icon: const Icon(Icons.search_rounded),
+            label: const Text('Show matching events'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _pickDates() async {
+    final now = DateTime.now();
+    final result = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+      initialDateRange: dateRange,
+    );
+    if (result != null && mounted) setState(() => dateRange = result);
+  }
 }
 
 class EventCard extends StatelessWidget {
@@ -649,6 +1123,7 @@ class EventDetailScreen extends StatefulWidget {
 }
 
 class _EventDetailScreenState extends State<EventDetailScreen> {
+  int? selectedSessionId;
   late Future<Map<String, dynamic>> future = widget.api.get(
     '/mobile/events/${widget.slug}',
   );
@@ -664,13 +1139,43 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       final event = loaded ?? widget.preview;
       final loading = snapshot.connectionState != ConnectionState.done;
       final eventEnded = event['has_ended'] == true;
+      final sessions = (event['sessions'] as List? ?? const [])
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .toList();
+      final activeSessionId =
+          selectedSessionId ??
+          (sessions.isEmpty ? null : (sessions.first['id'] as num?)?.toInt());
+      final matchingSessions = sessions
+          .where(
+            (session) => (session['id'] as num?)?.toInt() == activeSessionId,
+          )
+          .toList();
+      final activeSession = matchingSessions.isEmpty
+          ? null
+          : matchingSessions.first;
+      final visibleTypes = (event['ticket_types'] as List? ?? const [])
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .where((type) {
+            if (activeSessionId == null) return true;
+            final sessionIds = (type['session_ids'] as List? ?? const [])
+                .map((value) => (value as num).toInt())
+                .toList();
+            return sessionIds.isEmpty || sessionIds.contains(activeSessionId);
+          })
+          .toList();
+      final checkoutEvent = <String, dynamic>{
+        ...event,
+        'ticket_types': visibleTypes,
+        'selected_session_id': ?activeSessionId,
+      };
 
       return Scaffold(
         backgroundColor: AppColors.canvas,
-        bottomNavigationBar:
-            !eventEnded &&
-                (event['ticket_types'] as List? ?? const []).isNotEmpty
-            ? _EventCheckoutBar(event: event, onPressed: () => _openCart(event))
+        bottomNavigationBar: !eventEnded && visibleTypes.isNotEmpty
+            ? _EventCheckoutBar(
+                event: checkoutEvent,
+                onPressed: () => _openCart(checkoutEvent),
+              )
             : null,
         body: CustomScrollView(
           physics: const BouncingScrollPhysics(
@@ -823,6 +1328,46 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 18),
+                    if (sessions.length > 1) ...[
+                      MotionEntrance(
+                        delay: const Duration(milliseconds: 120),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Choose a date',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 10),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: sessions.map((session) {
+                                  final id = (session['id'] as num).toInt();
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      selected: id == activeSessionId,
+                                      onSelected: (_) => setState(
+                                        () => selectedSessionId = id,
+                                      ),
+                                      avatar: const Icon(
+                                        Icons.calendar_month_rounded,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        '${session['name'] ?? 'Session'} · ${_date(session['starts_at'])}',
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
                     MotionEntrance(
                       delay: const Duration(milliseconds: 150),
                       offset: const Offset(0, .07),
@@ -833,18 +1378,39 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                             children: [
                               DetailRow(
                                 icon: Icons.calendar_month_rounded,
-                                title: _dateLong(event['starts_at']),
-                                subtitle: event['door_opens_at_note']
-                                    ?.toString(),
+                                title: _dateLong(
+                                  activeSession?['starts_at'] ??
+                                      event['starts_at'],
+                                ),
+                                subtitle:
+                                    activeSession?['doors_open_at'] != null
+                                    ? 'Doors open ${_time(activeSession?['doors_open_at'])}'
+                                    : event['door_opens_at_note']?.toString(),
                               ),
                               const SizedBox(height: 16),
                               DetailRow(
                                 icon: Icons.location_on_rounded,
                                 title:
+                                    activeSession?['venue']?['name']
+                                        ?.toString() ??
                                     event['venue']?['name']?.toString() ??
                                     'Venue TBA',
-                                subtitle: event['venue']?['address']
-                                    ?.toString(),
+                                subtitle:
+                                    activeSession?['venue']?['address']
+                                        ?.toString() ??
+                                    event['venue']?['address']?.toString(),
+                                onTap: () => _openVenueMap(
+                                  activeSession?['venue']?['location_url']
+                                          ?.toString() ??
+                                      event['venue']?['location_url']
+                                          ?.toString(),
+                                ),
+                                trailing:
+                                    (activeSession?['venue']?['location_url'] ??
+                                            event['venue']?['location_url']) !=
+                                        null
+                                    ? const Icon(Icons.open_in_new_rounded)
+                                    : null,
                               ),
                             ],
                           ),
@@ -875,6 +1441,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         ],
                       ),
                     ),
+                    if (event['organizer'] is Map) ...[
+                      const SizedBox(height: 24),
+                      _OrganizerProfileCard(
+                        organizer: Map<String, dynamic>.from(
+                          event['organizer'] as Map,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 28),
                     if (eventEnded)
                       MotionEntrance(
@@ -934,9 +1508,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                   label: const Text('Try again'),
                                 ),
                               )
-                            else if ((event['ticket_types'] as List? ??
-                                    const [])
-                                .isEmpty)
+                            else if (visibleTypes.isEmpty)
                               const EmptyState(
                                 icon: Icons.event_seat_rounded,
                                 title: 'Tickets coming soon',
@@ -944,7 +1516,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                     'Ticket types will appear here when sales open.',
                               )
                             else
-                              ...(event['ticket_types'] as List).map(
+                              ...visibleTypes.map(
                                 (raw) => Padding(
                                   padding: const EdgeInsets.only(bottom: 12),
                                   child: TicketTier(
@@ -952,7 +1524,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                     currency:
                                         event['currency']?.toString() ?? 'EGP',
                                     onBuy: () => _openCart(
-                                      event,
+                                      checkoutEvent,
                                       initialTicketTypeId: (raw['id'] as num)
                                           .toInt(),
                                     ),
@@ -1008,6 +1580,15 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
+  Future<void> _openVenueMap(String? rawUrl) async {
+    final url = Uri.tryParse(rawUrl ?? '');
+    if (url == null || !url.isScheme('https')) return;
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      showAppNotice(context, 'Could not open the venue map.', error: true);
+    }
+  }
+
   Future<void> _showCheckoutResult(
     CheckoutCompletion result,
   ) => showModalBottomSheet<void>(
@@ -1025,6 +1606,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const UxStepper(
+              steps: ['Tickets', 'Details', 'Payment', 'Confirmation'],
+              currentStep: 3,
+            ),
+            const SizedBox(height: 24),
             Container(
               width: 78,
               height: 78,
@@ -1194,6 +1780,30 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
     }
   }
 
+  Future<void> _markRead(String id) async {
+    try {
+      await widget.api.post(
+        '/mobile/buyer/notifications/$id/read',
+        audience: 'buyer',
+      );
+      if (mounted) setState(() => future = _load());
+    } catch (caught) {
+      if (mounted) setState(() => error = errorMessage(caught));
+    }
+  }
+
+  Future<void> _delete(String id) async {
+    try {
+      await widget.api.delete(
+        '/mobile/buyer/notifications/$id',
+        audience: 'buyer',
+      );
+      if (mounted) setState(() => future = _load());
+    } catch (caught) {
+      if (mounted) setState(() => error = errorMessage(caught));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => FractionallySizedBox(
     heightFactor: .88,
@@ -1281,6 +1891,8 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                 children: [
                   AsyncPanel(
                     future: future,
+                    onRetry: () => setState(() => future = _load()),
+                    skeleton: const SectionSkeleton(cards: 4, cardHeight: 96),
                     builder: (context, response) {
                       final items = response['data'] as List? ?? const [];
                       if (items.isEmpty) {
@@ -1296,71 +1908,104 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                           final item = Map<String, dynamic>.from(raw as Map);
                           final unread = item['read_at'] == null;
                           final action = item['action']?.toString();
+                          final id = item['id']?.toString() ?? '';
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: Card(
-                              color: unread
-                                  ? const Color(0xFFFFF6C9)
-                                  : AppColors.paper,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(28),
-                                onTap: action == null
-                                    ? null
-                                    : () => Navigator.pop(context, action),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      CircleAvatar(
-                                        backgroundColor: unread
-                                            ? AppColors.black
-                                            : const Color(0xFFEDE8E3),
-                                        foregroundColor: unread
-                                            ? AppColors.yellow
-                                            : AppColors.muted,
-                                        child: Icon(
-                                          _notificationIcon(
-                                            item['kind']?.toString(),
+                            child: Dismissible(
+                              key: ValueKey('notification-$id'),
+                              direction: DismissDirection.horizontal,
+                              confirmDismiss: (direction) async {
+                                if (direction == DismissDirection.startToEnd) {
+                                  await _markRead(id);
+                                } else {
+                                  await _delete(id);
+                                }
+                                return false;
+                              },
+                              background: const _SwipeAction(
+                                alignment: Alignment.centerLeft,
+                                color: AppColors.navy,
+                                icon: Icons.done_all_rounded,
+                                label: 'Mark read',
+                              ),
+                              secondaryBackground: const _SwipeAction(
+                                alignment: Alignment.centerRight,
+                                color: Color(0xFFB42318),
+                                icon: Icons.delete_outline_rounded,
+                                label: 'Delete',
+                              ),
+                              child: Card(
+                                color: unread
+                                    ? const Color(0xFFFFF6C9)
+                                    : AppColors.paper,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(28),
+                                  onTap: action == null
+                                      ? (unread ? () => _markRead(id) : null)
+                                      : () async {
+                                          if (unread) await _markRead(id);
+                                          if (context.mounted) {
+                                            Navigator.pop(context, action);
+                                          }
+                                        },
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        CircleAvatar(
+                                          backgroundColor: unread
+                                              ? AppColors.black
+                                              : const Color(0xFFEDE8E3),
+                                          foregroundColor: unread
+                                              ? AppColors.yellow
+                                              : AppColors.muted,
+                                          child: Icon(
+                                            _notificationIcon(
+                                              item['kind']?.toString(),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 13),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              item['title']?.toString() ??
-                                                  'TKTS APP update',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w800,
+                                        const SizedBox(width: 13),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item['title']?.toString() ??
+                                                    'TKTS APP update',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 5),
-                                            Text(
-                                              item['message']?.toString() ?? '',
-                                              style: const TextStyle(
-                                                color: AppColors.muted,
-                                                height: 1.4,
+                                              const SizedBox(height: 5),
+                                              Text(
+                                                item['message']?.toString() ??
+                                                    '',
+                                                style: const TextStyle(
+                                                  color: AppColors.muted,
+                                                  height: 1.4,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              _date(item['created_at']),
-                                              style: const TextStyle(
-                                                color: AppColors.muted,
-                                                fontSize: 11,
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                _date(item['created_at']),
+                                                style: const TextStyle(
+                                                  color: AppColors.muted,
+                                                  fontSize: 11,
+                                                ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      if (action != null)
-                                        const Icon(Icons.chevron_right_rounded),
-                                    ],
+                                        if (action != null)
+                                          const Icon(
+                                            Icons.chevron_right_rounded,
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1376,6 +2021,44 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
           ),
         ],
       ),
+    ),
+  );
+}
+
+class _SwipeAction extends StatelessWidget {
+  const _SwipeAction({
+    required this.alignment,
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  final Alignment alignment;
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    alignment: alignment,
+    padding: const EdgeInsets.symmetric(horizontal: 22),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: Colors.white),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -1880,6 +2563,11 @@ class _TransferSheetState extends State<TransferSheet> {
             const Text(
               'The recipient must already have a TKTS APP account. After acceptance, your old QR is cancelled and a new one is issued.',
               style: TextStyle(color: AppColors.muted, height: 1.5),
+            ),
+            const SizedBox(height: 18),
+            UxStepper(
+              steps: const ['Recipient', 'Preview', 'Confirm'],
+              currentStep: preview == null ? 0 : (confirmed ? 2 : 1),
             ),
             const SizedBox(height: 20),
             Row(
@@ -2495,6 +3183,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  _OrderTimeline(
+                    order: order,
+                    ticketsIssued: tickets.isNotEmpty,
+                  ),
+                  const SizedBox(height: 24),
                   Text(
                     'Inside this order',
                     style: Theme.of(context).textTheme.titleLarge,
@@ -2639,6 +3332,98 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 }
 
+class _OrderTimeline extends StatelessWidget {
+  const _OrderTimeline({required this.order, required this.ticketsIssued});
+
+  final Map<String, dynamic> order;
+  final bool ticketsIssued;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = order['status']?.toString().toLowerCase() ?? 'pending';
+    final paid = ['paid', 'completed', 'refunded'].contains(status);
+    final refunded = status == 'refunded';
+    final steps = [
+      ('Order placed', true, Icons.receipt_long_rounded),
+      ('Payment confirmed', paid, Icons.verified_rounded),
+      ('Tickets issued', ticketsIssued, Icons.confirmation_num_rounded),
+      ('Refund completed', refunded, Icons.replay_circle_filled_rounded),
+    ];
+    return Semantics(
+      label: 'Order progress',
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Order progress',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              ...List.generate(steps.length, (index) {
+                final step = steps[index];
+                final active = step.$2;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Column(
+                      children: [
+                        AnimatedContainer(
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 280),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: active
+                                ? AppColors.black
+                                : const Color(0xFFE7E1DC),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            step.$3,
+                            size: 17,
+                            color: active ? AppColors.yellow : AppColors.muted,
+                          ),
+                        ),
+                        if (index < steps.length - 1)
+                          Container(
+                            width: 2,
+                            height: 28,
+                            color: active
+                                ? AppColors.black
+                                : const Color(0xFFE7E1DC),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          step.$1,
+                          style: TextStyle(
+                            color: active ? AppColors.ink : AppColors.muted,
+                            fontWeight: active
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key, required this.api, required this.session});
   final ApiClient api;
@@ -2728,37 +3513,79 @@ class ProfileScreen extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 18),
-            ProfileTile(
-              onTap: () => _editName(context),
-              icon: Icons.badge_outlined,
-              title: 'Name',
-              subtitle: user['name']?.toString() ?? 'Not set',
+            _ProfileSection(
+              title: 'Account',
+              icon: Icons.person_outline_rounded,
+              children: [
+                ProfileTile(
+                  onTap: () => _editName(context),
+                  icon: Icons.badge_outlined,
+                  title: 'Name',
+                  subtitle: user['name']?.toString() ?? 'Not set',
+                ),
+                ProfileTile(
+                  icon: Icons.phone_rounded,
+                  title: 'Mobile',
+                  subtitle: user['phone']?.toString() ?? 'Not set',
+                ),
+                ProfileTile(
+                  icon: Icons.mail_outline_rounded,
+                  title: 'Email',
+                  subtitle: user['email']?.toString() ?? 'Not set',
+                ),
+              ],
             ),
-            ProfileTile(
-              icon: Icons.phone_rounded,
-              title: 'Mobile',
-              subtitle: user['phone']?.toString() ?? 'Not set',
+            const SizedBox(height: 16),
+            _ProfileSection(
+              title: 'Security',
+              icon: Icons.shield_outlined,
+              children: [
+                ProfileTile(
+                  onTap: () => _changePassword(context),
+                  icon: Icons.lock_reset_rounded,
+                  title: 'Change password',
+                  subtitle: 'Current password required',
+                ),
+                ProfileTile(
+                  icon: Icons.phonelink_lock_rounded,
+                  title: 'Phone verification',
+                  subtitle: user['phone_verified'] == true
+                      ? 'Verified'
+                      : 'Verification required',
+                  onTap: user['phone_verified'] == true
+                      ? null
+                      : () => _verifyPhone(context),
+                ),
+              ],
             ),
-            ProfileTile(
-              icon: Icons.mail_outline_rounded,
-              title: 'Email',
-              subtitle: user['email']?.toString() ?? 'Not set',
+            const SizedBox(height: 16),
+            const _ProfileSection(
+              title: 'Notifications',
+              icon: Icons.notifications_none_rounded,
+              children: [
+                ProfileTile(
+                  icon: Icons.notifications_active_outlined,
+                  title: 'Push notifications',
+                  subtitle: 'Orders, tickets and transfer updates',
+                ),
+              ],
             ),
-            const ProfileTile(
-              icon: Icons.language_rounded,
-              title: 'Language',
-              subtitle: 'English • Arabic ready',
-            ),
-            const ProfileTile(
-              icon: Icons.support_agent_rounded,
-              title: 'Help & support',
-              subtitle: 'Contact the TKTS APP team',
-            ),
-            ProfileTile(
-              onTap: () => _changePassword(context),
-              icon: Icons.lock_reset_rounded,
-              title: 'Change password',
-              subtitle: 'Current password required',
+            const SizedBox(height: 16),
+            const _ProfileSection(
+              title: 'Help & preferences',
+              icon: Icons.tune_rounded,
+              children: [
+                ProfileTile(
+                  icon: Icons.language_rounded,
+                  title: 'Language',
+                  subtitle: 'English • Arabic ready',
+                ),
+                ProfileTile(
+                  icon: Icons.support_agent_rounded,
+                  title: 'Help & support',
+                  subtitle: 'Contact the TKTS APP team',
+                ),
+              ],
             ),
             const SizedBox(height: 18),
             OutlinedButton.icon(
@@ -2977,6 +3804,77 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
+class _OrganizerProfileCard extends StatelessWidget {
+  const _OrganizerProfileCard({required this.organizer});
+
+  final Map<String, dynamic> organizer;
+
+  @override
+  Widget build(BuildContext context) {
+    final logo = organizer['logo_url']?.toString();
+    final blurb = organizer['profile_blurb']?.toString().trim();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipOval(
+              child: SizedBox(
+                width: 54,
+                height: 54,
+                child: logo == null || logo.isEmpty
+                    ? const ColoredBox(
+                        color: AppColors.yellow,
+                        child: Icon(Icons.apartment_rounded),
+                      )
+                    : EventImage(url: logo),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'ORGANIZED BY',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 10,
+                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    organizer['name']?.toString() ?? 'Event organizer',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (blurb != null && blurb.isNotEmpty) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      blurb,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class TicketTier extends StatelessWidget {
   const TicketTier({
     super.key,
@@ -3117,41 +4015,62 @@ class DetailRow extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
+    this.onTap,
+    this.trailing,
   });
   final IconData icon;
   final String title;
   final String? subtitle;
+  final VoidCallback? onTap;
+  final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFE7DC),
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Icon(icon, color: AppColors.coralDark),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-            if (subtitle != null && subtitle!.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                subtitle!,
-                style: const TextStyle(color: AppColors.muted, fontSize: 12),
-              ),
-            ],
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(16),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFE7DC),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: AppColors.coralDark),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            Padding(padding: const EdgeInsets.only(top: 10), child: trailing!),
           ],
-        ),
+        ],
       ),
-    ],
+    ),
   );
 }
 
@@ -3202,6 +4121,39 @@ class ProfileTile extends StatelessWidget {
       trailing: const Icon(Icons.chevron_right_rounded),
       onTap: onTap,
     ),
+  );
+}
+
+class _ProfileSection extends StatelessWidget {
+  const _ProfileSection({
+    required this.title,
+    required this.icon,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          Icon(icon, size: 20, color: AppColors.coralDark),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      ...children,
+    ],
   );
 }
 
@@ -3258,6 +4210,11 @@ String _dateLong(Object? value) {
   return parsed == null
       ? 'Date and time TBA'
       : DateFormat('EEE, MMM d • h:mm a').format(parsed.toLocal());
+}
+
+String _time(Object? value) {
+  final parsed = DateTime.tryParse(value?.toString() ?? '');
+  return parsed == null ? 'TBA' : DateFormat('h:mm a').format(parsed.toLocal());
 }
 
 Color _statusColor(String? status) {

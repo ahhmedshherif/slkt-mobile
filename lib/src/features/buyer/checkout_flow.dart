@@ -159,6 +159,13 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
               ),
             ),
             const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 4),
+              child: UxStepper(
+                steps: const ['Tickets', 'Details', 'Payment', 'Confirmation'],
+                currentStep: ticketCount == 0 ? 0 : 1,
+              ),
+            ),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
@@ -846,6 +853,16 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
                         ],
                       ),
                     ],
+                  ),
+                ),
+                const ColoredBox(
+                  color: AppColors.paper,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(22, 10, 22, 10),
+                    child: UxStepper(
+                      steps: ['Tickets', 'Details', 'Payment', 'Confirmation'],
+                      currentStep: 2,
+                    ),
                   ),
                 ),
                 if (progress < 100)

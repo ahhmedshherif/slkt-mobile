@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'core/api_client.dart';
@@ -11,6 +12,7 @@ import 'core/session_controller.dart';
 import 'core/theme.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/buyer/buyer_shell.dart';
+import 'features/onboarding/onboarding_screen.dart';
 import 'widgets/common.dart';
 
 bool isTicketsAppLink(Uri link) {
@@ -49,6 +51,8 @@ class _EvntsAppState extends State<EvntsApp> {
   Map<String, dynamic>? mobileUpdate;
   bool updateCheckDone = false;
   bool updateSkipped = false;
+  bool onboardingChecked = false;
+  bool onboardingComplete = false;
 
   @override
   void initState() {
@@ -58,7 +62,27 @@ class _EvntsAppState extends State<EvntsApp> {
     });
     appLinkSubscription = appLinks.uriLinkStream.listen(_handleAppLink);
     unawaited(_readInitialAppLink());
+    unawaited(_loadOnboarding());
     _checkForUpdate();
+  }
+
+  Future<void> _loadOnboarding() async {
+    final preferences = await SharedPreferences.getInstance();
+    onboardingComplete =
+        preferences.getBool('tkts_onboarding_complete') ?? false;
+    onboardingChecked = true;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _completeOnboarding() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('tkts_onboarding_complete', true);
+    if (mounted) {
+      setState(() {
+        onboardingComplete = true;
+        onboardingChecked = true;
+      });
+    }
   }
 
   Future<void> _readInitialAppLink() async {
@@ -116,7 +140,10 @@ class _EvntsAppState extends State<EvntsApp> {
       animation: widget.session,
       builder: (context, _) {
         final showSplash =
-            widget.session.restoring || !minimumSplashDone || !updateCheckDone;
+            widget.session.restoring ||
+            !minimumSplashDone ||
+            !updateCheckDone ||
+            !onboardingChecked;
         final Widget destination;
         if (showSplash) {
           destination = const SplashScreen(key: ValueKey('slkt-splash'));
@@ -128,6 +155,11 @@ class _EvntsAppState extends State<EvntsApp> {
             onLater: mobileUpdate?['force_update'] == true
                 ? null
                 : () => setState(() => updateSkipped = true),
+          );
+        } else if (!onboardingComplete) {
+          destination = OnboardingScreen(
+            key: const ValueKey('onboarding'),
+            onComplete: _completeOnboarding,
           );
         } else {
           destination = switch (widget.session.kind) {
