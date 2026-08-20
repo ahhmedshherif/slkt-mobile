@@ -160,24 +160,11 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
             if (edgeSwipeDistance > 0)
               Positioned(
-                left: 10 + (edgeSwipeDistance * .28),
-                top: MediaQuery.sizeOf(context).height * .46,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppColors.black.withValues(alpha: .88),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Icon(
-                        Icons.arrow_back_rounded,
-                        color: edgeSwipeDistance >= 64
-                            ? AppColors.yellow
-                            : Colors.white,
-                      ),
-                    ),
-                  ),
+                left: 0,
+                top: MediaQuery.sizeOf(context).height * .5 - 88,
+                child: EdgeSwipeShadow(
+                  progress: (edgeSwipeDistance / 72).clamp(0, 1),
+                  reduceMotion: MediaQuery.disableAnimationsOf(context),
                 ),
               ),
           ],

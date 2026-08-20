@@ -22,6 +22,36 @@ void main() {
     expect(find.text('TKTS APP'), findsOneWidget);
   });
 
+  test('home event filters use Laravel-compatible boolean query values', () {
+    expect(buildHomeRecommendationQuery()['recommended'], 1);
+    expect(buildHomeTrendingQuery()['hot'], 1);
+    expect(buildHomeRecommendationQuery(categoryId: 8)['category_id'], 8);
+  });
+
+  testWidgets('idle refresh and edge swipe feedback never show arrows', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              SlktRefresh(
+                onRefresh: () async {},
+                child: ListView(children: const [SizedBox(height: 900)]),
+              ),
+              const EdgeSwipeShadow(progress: .7),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
+    expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
+  });
+
   test('buyer cart, favorites and recent events persist locally', () async {
     SharedPreferences.setMockInitialValues({});
 

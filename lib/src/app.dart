@@ -376,40 +376,7 @@ class _EdgeSwipeBackState extends State<_EdgeSwipeBack> {
                 ),
               ),
               if (dragDistance > 0)
-                IgnorePointer(
-                  child: Transform.translate(
-                    offset: Offset(8 + 28 * progress, 0),
-                    child: AnimatedScale(
-                      scale: .82 + .18 * progress,
-                      duration: reduceMotion
-                          ? Duration.zero
-                          : const Duration(milliseconds: 90),
-                      child: Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: AppColors.black.withValues(
-                            alpha: .72 + .2 * progress,
-                          ),
-                          shape: BoxShape.circle,
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x33000000),
-                              blurRadius: 18,
-                              offset: Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.arrow_back_rounded,
-                          color: progress >= .88
-                              ? AppColors.yellow
-                              : Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                EdgeSwipeShadow(progress: progress, reduceMotion: reduceMotion),
             ],
           ),
         ),

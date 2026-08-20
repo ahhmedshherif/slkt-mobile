@@ -20,6 +20,24 @@ import '../../widgets/common.dart';
 import '../auth/auth_screen.dart';
 import 'checkout_flow.dart';
 
+Map<String, dynamic> buildHomeRecommendationQuery({
+  int? categoryId,
+  String? city,
+}) {
+  final query = <String, dynamic>{'per_page': 12, 'recommended': 1};
+  if (categoryId != null) {
+    query['category_id'] = categoryId;
+  } else if (city?.trim().isNotEmpty == true) {
+    query['city'] = city!.trim();
+  }
+  return query;
+}
+
+Map<String, dynamic> buildHomeTrendingQuery() => const {
+  'per_page': 10,
+  'hot': 1,
+};
+
 class BuyerShell extends StatefulWidget {
   const BuyerShell({super.key, required this.api, required this.session});
   final ApiClient api;
@@ -270,19 +288,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<Map<String, dynamic>> _load() async {
     final recent = await BuyerLocalStore.recentEvents();
-    final recommendationQuery = <String, dynamic>{
-      'per_page': 12,
-      'recommended': true,
-    };
-    if (recent.isNotEmpty) {
-      final categoryId = recent.first['category']?['id'];
-      final city = recent.first['venue']?['city']?.toString();
-      if (categoryId != null) {
-        recommendationQuery['category_id'] = categoryId;
-      } else if (city?.isNotEmpty == true) {
-        recommendationQuery['city'] = city;
-      }
-    }
+    final categoryId = recent.isEmpty
+        ? null
+        : (recent.first['category']?['id'] as num?)?.toInt();
+    final city = recent.isEmpty
+        ? null
+        : recent.first['venue']?['city']?.toString();
+    final recommendationQuery = buildHomeRecommendationQuery(
+      categoryId: categoryId,
+      city: city,
+    );
     final responses = await Future.wait([
       widget.api.get('/mobile/events', query: {'per_page': 16}),
       widget.api.get('/mobile/events', query: recommendationQuery),
@@ -290,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
         '/mobile/events',
         query: {'per_page': 8, 'period': 'past'},
       ),
-      widget.api.get('/mobile/events', query: {'per_page': 10, 'hot': true}),
+      widget.api.get('/mobile/events', query: buildHomeTrendingQuery()),
     ]);
     Map<String, dynamic> tickets = const {};
     Map<String, dynamic> orders = const {};
@@ -1488,6 +1503,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       final activeSession = matchingSessions.isEmpty
           ? null
           : matchingSessions.first;
+      final activeVenueRaw = activeSession?['venue'] ?? event['venue'];
+      final activeVenue = activeVenueRaw is Map
+          ? Map<String, dynamic>.from(activeVenueRaw)
+          : null;
       final visibleTypes = (event['ticket_types'] as List? ?? const [])
           .map((raw) => Map<String, dynamic>.from(raw as Map))
           .where((type) {
@@ -1722,36 +1741,36 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                     ? 'Doors open ${_time(activeSession?['doors_open_at'])}'
                                     : event['door_opens_at_note']?.toString(),
                               ),
-                              const SizedBox(height: 16),
-                              DetailRow(
-                                icon: Icons.location_on_rounded,
-                                title:
-                                    activeSession?['venue']?['name']
-                                        ?.toString() ??
-                                    event['venue']?['name']?.toString() ??
-                                    'Venue TBA',
-                                subtitle:
-                                    activeSession?['venue']?['address']
-                                        ?.toString() ??
-                                    event['venue']?['address']?.toString(),
-                                onTap: () => _openVenueMap(
-                                  activeSession?['venue']?['location_url']
-                                          ?.toString() ??
-                                      event['venue']?['location_url']
-                                          ?.toString(),
-                                ),
-                                trailing:
-                                    (activeSession?['venue']?['location_url'] ??
-                                            event['venue']?['location_url']) !=
-                                        null
-                                    ? const Icon(Icons.open_in_new_rounded)
-                                    : null,
-                              ),
                             ],
                           ),
                         ),
                       ),
                     ),
+                    if (activeVenue != null) ...[
+                      const SizedBox(height: 18),
+                      MotionEntrance(
+                        key: ValueKey('venue-${activeVenue['id']}'),
+                        delay: const Duration(milliseconds: 190),
+                        offset: const Offset(0, .07),
+                        child: VenueGalleryCard(
+                          venue: activeVenue,
+                          onOpenMap: () => _openVenueMap(
+                            activeVenue['location_url']?.toString(),
+                            query:
+                                [
+                                      activeVenue['name'],
+                                      activeVenue['address'],
+                                      activeVenue['location_name'],
+                                      activeVenue['city'],
+                                    ]
+                                    .whereType<Object>()
+                                    .map((value) => value.toString())
+                                    .where((value) => value.trim().isNotEmpty)
+                                    .join(', '),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 26),
                     MotionEntrance(
                       delay: const Duration(milliseconds: 230),
@@ -1915,9 +1934,21 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-  Future<void> _openVenueMap(String? rawUrl) async {
-    final url = Uri.tryParse(rawUrl ?? '');
-    if (url == null || !url.isScheme('https')) return;
+  Future<void> _openVenueMap(String? rawUrl, {String? query}) async {
+    var url = Uri.tryParse(rawUrl ?? '');
+    if (url == null || !url.isScheme('https')) {
+      final search = query?.trim() ?? '';
+      if (search.isEmpty) {
+        if (mounted) {
+          showAppNotice(context, 'Venue location is not available yet.');
+        }
+        return;
+      }
+      url = Uri.https('www.google.com', '/maps/search/', {
+        'api': '1',
+        'query': search,
+      });
+    }
     if (!await launchUrl(url, mode: LaunchMode.externalApplication) &&
         mounted) {
       showAppNotice(context, 'Could not open the venue map.', error: true);
@@ -4807,6 +4838,309 @@ class TicketTier extends StatelessWidget {
       ),
     ),
   );
+}
+
+class VenueGalleryCard extends StatefulWidget {
+  const VenueGalleryCard({
+    super.key,
+    required this.venue,
+    required this.onOpenMap,
+  });
+
+  final Map<String, dynamic> venue;
+  final VoidCallback onOpenMap;
+
+  @override
+  State<VenueGalleryCard> createState() => _VenueGalleryCardState();
+}
+
+class _VenueGalleryCardState extends State<VenueGalleryCard> {
+  final PageController controller = PageController();
+  int page = 0;
+
+  List<String> get images {
+    final values = <String>[];
+    void add(Object? raw) {
+      final value = raw?.toString().trim() ?? '';
+      if (value.isNotEmpty && !values.contains(value)) values.add(value);
+    }
+
+    add(widget.venue['featured_image_url']);
+    for (final raw in widget.venue['gallery_images'] as List? ?? const []) {
+      add(raw);
+    }
+    return values;
+  }
+
+  @override
+  void didUpdateWidget(covariant VenueGalleryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.venue['id'] != widget.venue['id']) {
+      page = 0;
+      if (controller.hasClients) controller.jumpToPage(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gallery = images;
+    final venueName = widget.venue['name']?.toString().trim();
+    final address =
+        [
+              widget.venue['address'],
+              widget.venue['location_name'],
+              widget.venue['city'],
+            ]
+            .whereType<Object>()
+            .map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .join(' · ');
+    final facilities = (widget.venue['facilities'] as List? ?? const [])
+        .map((value) => value.toString().trim())
+        .where((value) => value.isNotEmpty)
+        .take(5)
+        .toList();
+    final indicatorCount = gallery.length > 8 ? 8 : gallery.length;
+    final indicatorPage = page >= indicatorCount ? indicatorCount - 1 : page;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 238,
+            child: gallery.isEmpty
+                ? Container(
+                    color: const Color(0xFFE7DCD5),
+                    alignment: Alignment.center,
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.location_city_rounded,
+                          size: 42,
+                          color: AppColors.coralDark,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Venue photos coming soon',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      PageView.builder(
+                        controller: controller,
+                        itemCount: gallery.length,
+                        onPageChanged: (value) => setState(() => page = value),
+                        itemBuilder: (_, index) => Semantics(
+                          image: true,
+                          label:
+                              '${venueName?.isNotEmpty == true ? venueName : 'Venue'} photo ${index + 1} of ${gallery.length}',
+                          child: EventImage(url: gallery[index]),
+                        ),
+                      ),
+                      const IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0x33000000),
+                                Colors.transparent,
+                                Color(0x88000000),
+                              ],
+                              stops: [0, .55, 1],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 14,
+                        top: 14,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.black.withValues(alpha: .72),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.place_rounded,
+                                size: 16,
+                                color: AppColors.yellow,
+                              ),
+                              SizedBox(width: 5),
+                              Text(
+                                'VENUE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (gallery.length > 1)
+                        Positioned(
+                          right: 14,
+                          top: 14,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            child: Container(
+                              key: ValueKey(page),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.black.withValues(alpha: .72),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${page + 1} / ${gallery.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (gallery.length > 1)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 14,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              indicatorCount,
+                              (index) => AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                                width: index == indicatorPage ? 22 : 6,
+                                height: 6,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: index == indicatorPage
+                                      ? AppColors.yellow
+                                      : Colors.white.withValues(alpha: .65),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            venueName?.isNotEmpty == true
+                                ? venueName!
+                                : 'Venue TBA',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          if (address.isNotEmpty) ...[
+                            const SizedBox(height: 7),
+                            Text(
+                              address,
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      onPressed: widget.onOpenMap,
+                      icon: const Icon(Icons.directions_rounded, size: 19),
+                      label: const Text('Directions'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 46),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                      ),
+                    ),
+                  ],
+                ),
+                if (facilities.isNotEmpty) ...[
+                  const SizedBox(height: 15),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: facilities
+                        .map(
+                          (facility) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.canvas,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: Text(
+                              facility,
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class EventImage extends StatelessWidget {

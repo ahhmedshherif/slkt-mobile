@@ -7,6 +7,71 @@ import 'package:shimmer/shimmer.dart';
 import '../core/api_client.dart';
 import '../core/theme.dart';
 
+class EdgeSwipeShadow extends StatelessWidget {
+  const EdgeSwipeShadow({
+    super.key,
+    required this.progress,
+    this.reduceMotion = false,
+  });
+
+  final double progress;
+  final bool reduceMotion;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = progress.clamp(0.0, 1.0);
+    return IgnorePointer(
+      child: Transform.translate(
+        offset: Offset(-16 + 18 * value, 0),
+        child: AnimatedContainer(
+          duration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 110),
+          curve: const Cubic(.2, 0, 0, 1),
+          width: 46 + 18 * value,
+          height: 152 + 24 * value,
+          decoration: BoxDecoration(
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(99),
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                AppColors.black.withValues(alpha: .2 + .16 * value),
+                AppColors.black.withValues(alpha: .06 + .06 * value),
+                Colors.transparent,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.black.withValues(alpha: .1 + .12 * value),
+                blurRadius: 24 + 12 * value,
+                spreadRadius: 2 + 3 * value,
+                offset: const Offset(5, 0),
+              ),
+            ],
+          ),
+          alignment: Alignment.centerLeft,
+          child: AnimatedContainer(
+            duration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 120),
+            width: value >= .88 ? 3 : 1,
+            height: 54 + 20 * value,
+            decoration: BoxDecoration(
+              color: value >= .88
+                  ? AppColors.yellow.withValues(alpha: .9)
+                  : Colors.white.withValues(alpha: .24),
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SlktRefresh extends StatefulWidget {
   const SlktRefresh({super.key, required this.onRefresh, required this.child});
 
@@ -22,7 +87,11 @@ class _SlktRefreshState extends State<SlktRefresh> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = status != null && status != RefreshIndicatorStatus.done;
+    final visible =
+        status == RefreshIndicatorStatus.drag ||
+        status == RefreshIndicatorStatus.armed ||
+        status == RefreshIndicatorStatus.snap ||
+        status == RefreshIndicatorStatus.refresh;
     final reduced = MediaQuery.disableAnimationsOf(context);
     return Stack(
       alignment: Alignment.topCenter,
@@ -38,43 +107,57 @@ class _SlktRefreshState extends State<SlktRefresh> {
         IgnorePointer(
           child: SafeArea(
             bottom: false,
-            child: AnimatedSlide(
+            child: AnimatedSwitcher(
               duration: reduced
                   ? Duration.zero
-                  : const Duration(milliseconds: 220),
-              curve: const Cubic(0.2, 0, 0, 1),
-              offset: visible ? Offset.zero : const Offset(0, -1.6),
-              child: AnimatedScale(
-                duration: reduced
-                    ? Duration.zero
-                    : const Duration(milliseconds: 220),
-                scale: visible ? 1 : .8,
-                child: Container(
-                  margin: const EdgeInsets.only(top: 6),
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.black,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x33000000), blurRadius: 18),
-                    ],
+                  : const Duration(milliseconds: 180),
+              switchInCurve: const Cubic(0.2, 0, 0, 1),
+              switchOutCurve: const Cubic(0.3, 0, 1, 1),
+              transitionBuilder: (child, animation) {
+                final slide = Tween<Offset>(
+                  begin: const Offset(0, -.7),
+                  end: Offset.zero,
+                ).animate(animation);
+                final scale = Tween<double>(
+                  begin: .82,
+                  end: 1,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: slide,
+                    child: ScaleTransition(scale: scale, child: child),
                   ),
-                  alignment: Alignment.center,
-                  child: status == RefreshIndicatorStatus.refresh
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: AppColors.yellow,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: AppColors.yellow,
-                        ),
-                ),
-              ),
+                );
+              },
+              child: visible
+                  ? Container(
+                      key: const ValueKey('slkt-refresh-visible'),
+                      margin: const EdgeInsets.only(top: 6),
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.black,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: const [
+                          BoxShadow(color: Color(0x33000000), blurRadius: 18),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: status == RefreshIndicatorStatus.refresh
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: AppColors.yellow,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.refresh_rounded,
+                              color: AppColors.yellow,
+                            ),
+                    )
+                  : const SizedBox(key: ValueKey('slkt-refresh-idle')),
             ),
           ),
         ),
