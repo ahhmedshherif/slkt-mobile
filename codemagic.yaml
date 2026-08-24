@@ -43,8 +43,8 @@ workflows:
       xcode: latest
       cocoapods: default
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.slktegy.evntsApp
+        distribution_type: development
+        bundle_identifier: com.rahul.group32
       vars:
         API_BASE_URL: "https://slktegy.com/api/v1"
         ONESIGNAL_APP_ID: "c39ec100-bcb6-4a3f-b07d-12035107cd5e"
@@ -55,9 +55,14 @@ workflows:
         - "$HOME/Library/Caches/CocoaPods"
     scripts:
       - name: Get Flutter packages
-        script: flutter pub get
+        script: |
+          flutter clean
+          flutter pub get
       - name: Install CocoaPods
-        script: find . -name "Podfile" -execdir pod install \;
+        script: |
+          cd ios
+          pod repo update
+          pod install
       - name: Configure iOS signing
         script: xcode-project use-profiles
       - name: Analyze project

@@ -67,6 +67,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
   String? error;
   int previewSequence = 0;
   bool restoringCart = true;
+  String checkoutAttemptKey = const Uuid().v4();
 
   List<Map<String, dynamic>> get types =>
       (widget.event['ticket_types'] as List? ?? const [])
@@ -105,7 +106,12 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
 
   Future<void> _restoreCart() async {
     final slug = widget.event['slug']?.toString() ?? '';
-    final saved = await BuyerLocalStore.cart(slug);
+    final values = await Future.wait([
+      BuyerLocalStore.cart(slug),
+      BuyerLocalStore.checkoutAttempt(slug),
+    ]);
+    final saved = values[0] as Map<String, dynamic>?;
+    final savedAttempt = values[1] as String?;
     if (!mounted) return;
     final restored = Map<String, dynamic>.from(
       saved?['quantities'] as Map? ?? const {},
@@ -118,6 +124,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
       }
     }
     promo.text = saved?['promo']?.toString() ?? '';
+    if (savedAttempt?.isNotEmpty == true) checkoutAttemptKey = savedAttempt!;
     final selected = widget.initialTicketTypeId;
     if (selected != null) quantities[selected] = quantities[selected] ?? 1;
     setState(() => restoringCart = false);
@@ -442,6 +449,15 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
   }
 
   Future<void> _checkout() async {
+    if (checkoutBusy) return;
+    final slug = widget.event['slug']?.toString() ?? '';
+    await BuyerLocalStore.saveCheckoutAttempt(slug, checkoutAttemptKey);
+    await BuyerLocalStore.saveCart(
+      slug,
+      quantities: payloadQuantities,
+      promo: promo.text.trim(),
+    );
+    if (!mounted) return;
     setState(() {
       checkoutBusy = true;
       error = null;
@@ -454,11 +470,10 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
           'quantities': payloadQuantities,
           if (promo.text.trim().isNotEmpty) 'promo_code': promo.text.trim(),
           'recipient_details': {},
-          'idempotency_key': const Uuid().v4(),
+          'idempotency_key': checkoutAttemptKey,
         },
       );
       final data = Map<String, dynamic>.from(response['data'] as Map);
-      await BuyerLocalStore.clearCart(widget.event['slug']?.toString() ?? '');
       final checkoutUrl = Uri.tryParse(data['checkout_url']?.toString() ?? '');
       final orderId = (data['order_id'] as num?)?.toInt();
       final expiresAt = DateTime.tryParse(data['expires_at']?.toString() ?? '');
@@ -472,6 +487,18 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
           serverTime == null) {
         throw const ApiException('TKTS APP could not start secure payment.');
       }
+      await BuyerLocalStore.savePendingCheckout({
+        'order_id': orderId,
+        'order_number': data['order_number']?.toString() ?? 'Order #$orderId',
+        'checkout_url': checkoutUrl.toString(),
+        'redirect_path':
+            data['redirect_path']?.toString() ?? '/checkout/$orderId/success',
+        'expires_at': expiresAt.toIso8601String(),
+        'server_time': serverTime.toIso8601String(),
+        'event_slug': slug,
+        'saved_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      await BuyerLocalStore.clearCart(slug);
       if (!mounted) return;
       final result = await showPaymentSheet(
         context: context,
@@ -486,12 +513,20 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
       );
       if (!mounted || result == null) return;
       if (result.status == CheckoutPaymentStatus.failed) {
+        await BuyerLocalStore.clearPendingCheckout();
+        await BuyerLocalStore.clearCheckoutAttempt(slug);
+        checkoutAttemptKey = const Uuid().v4();
         setState(
           () => error =
               'Payment was not completed. Your card was not confirmed. You can try again.',
         );
         return;
       }
+      if (result.status == CheckoutPaymentStatus.paid) {
+        await BuyerLocalStore.clearPendingCheckout();
+        await BuyerLocalStore.clearCheckoutAttempt(slug);
+      }
+      if (!mounted) return;
       Navigator.pop(context, result);
     } catch (exception) {
       if (mounted) setState(() => error = _message(exception));
@@ -1073,14 +1108,19 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
       if (status == 'paid') {
         poller?.cancel();
         countdown?.cancel();
+        unawaited(BuyerLocalStore.clearPendingCheckout());
         setState(() => terminalStatus = CheckoutPaymentStatus.paid);
       } else if (['failed', 'cancelled', 'refunded'].contains(status)) {
         poller?.cancel();
         countdown?.cancel();
+        unawaited(BuyerLocalStore.clearPendingCheckout());
         setState(() => terminalStatus = CheckoutPaymentStatus.failed);
       } else if (['expired', 'payment_review'].contains(status)) {
         poller?.cancel();
         countdown?.cancel();
+        if (status == 'expired') {
+          unawaited(BuyerLocalStore.clearPendingCheckout());
+        }
         setState(() {
           expired = status == 'expired';
           terminalStatus = CheckoutPaymentStatus.failed;
@@ -1093,14 +1133,18 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
     }
   }
 
-  void _finishPaid() => Navigator.pop(
-    context,
-    CheckoutCompletion(
-      status: CheckoutPaymentStatus.paid,
-      orderId: widget.orderId,
-      orderNumber: widget.orderNumber,
-    ),
-  );
+  Future<void> _finishPaid() async {
+    await BuyerLocalStore.clearPendingCheckout();
+    if (!mounted) return;
+    Navigator.pop(
+      context,
+      CheckoutCompletion(
+        status: CheckoutPaymentStatus.paid,
+        orderId: widget.orderId,
+        orderNumber: widget.orderNumber,
+      ),
+    );
+  }
 
   double get _progressValue =>
       (remaining.inMilliseconds / const Duration(minutes: 15).inMilliseconds)

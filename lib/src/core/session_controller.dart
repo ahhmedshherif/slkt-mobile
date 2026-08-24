@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
+import 'buyer_local_store.dart';
 
 enum SessionKind { guest, buyer }
 
@@ -29,6 +30,7 @@ class SessionController extends ChangeNotifier {
         return;
       } catch (_) {
         await api.clearToken('buyer');
+        await BuyerLocalStore.clearPrivateData();
       }
     }
     // This app is buyer-only. Remove tokens left by older app versions.
@@ -62,6 +64,7 @@ class SessionController extends ChangeNotifier {
     }
     await api.clearToken('buyer');
     await api.clearToken('staff');
+    await BuyerLocalStore.clearPrivateData();
     kind = SessionKind.guest;
     user = const {};
     notifyListeners();

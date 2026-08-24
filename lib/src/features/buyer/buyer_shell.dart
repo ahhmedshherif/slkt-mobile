@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_client.dart';
 import '../../core/buyer_local_store.dart';
 import '../../core/session_controller.dart';
+import '../../core/ticket_privacy_guard.dart';
 import '../../core/theme.dart';
 import '../../widgets/common.dart';
 import '../auth/auth_screen.dart';
@@ -85,9 +86,10 @@ class _BuyerShellState extends State<BuyerShell> {
   void initState() {
     super.initState();
     widget.session.addListener(_handleSessionNavigation);
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _handleSessionNavigation(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleSessionNavigation();
+      unawaited(_recoverPendingCheckout());
+    });
     _refreshNotifications();
   }
 
@@ -208,6 +210,60 @@ class _BuyerShellState extends State<BuyerShell> {
     }
   }
 
+  Future<void> _recoverPendingCheckout() async {
+    final pending = await BuyerLocalStore.pendingCheckout();
+    final orderId = (pending?['order_id'] as num?)?.toInt();
+    final eventSlug = pending?['event_slug']?.toString() ?? '';
+    if (orderId == null) return;
+    try {
+      final response = await widget.api.get(
+        '/mobile/buyer/orders/$orderId',
+        audience: 'buyer',
+      );
+      final order = Map<String, dynamic>.from(
+        response['data'] as Map? ?? const {},
+      );
+      final status = order['status']?.toString().toLowerCase();
+      if (status == 'paid') {
+        await BuyerLocalStore.clearPendingCheckout();
+        if (eventSlug.isNotEmpty) {
+          await BuyerLocalStore.clearCheckoutAttempt(eventSlug);
+        }
+        _refreshCommerce();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Payment confirmed. Your tickets are ready.'),
+            action: SnackBarAction(label: 'VIEW', onPressed: _openTickets),
+          ),
+        );
+      } else if ({
+        'failed',
+        'cancelled',
+        'expired',
+        'refunded',
+      }.contains(status)) {
+        await BuyerLocalStore.clearPendingCheckout();
+        if (eventSlug.isNotEmpty) {
+          await BuyerLocalStore.clearCheckoutAttempt(eventSlug);
+        }
+      } else if (status == 'pending' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('You have a checkout waiting for payment.'),
+            action: SnackBarAction(
+              label: 'CONTINUE',
+              onPressed: () =>
+                  unawaited(_navigateToDestination('order:$orderId')),
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      // Keep the encrypted pending checkout for the next successful launch.
+    }
+  }
+
   @override
   void dispose() {
     widget.session.removeListener(_handleSessionNavigation);
@@ -298,38 +354,46 @@ class _HomeScreenState extends State<HomeScreen> {
       categoryId: categoryId,
       city: city,
     );
-    final responses = await Future.wait([
-      widget.api.get('/mobile/events', query: {'per_page': 16}),
-      widget.api.get('/mobile/events', query: recommendationQuery),
-      widget.api.get(
-        '/mobile/events',
-        query: {'per_page': 8, 'period': 'past'},
-      ),
-      widget.api.get('/mobile/events', query: buildHomeTrendingQuery()),
-    ]);
-    Map<String, dynamic> tickets = const {};
-    Map<String, dynamic> orders = const {};
     try {
-      final buyerData = await Future.wait([
-        widget.api.get('/buyer/tickets', audience: 'buyer'),
+      final responses = await Future.wait([
+        widget.api.get('/mobile/events', query: {'per_page': 16}),
+        widget.api.get('/mobile/events', query: recommendationQuery),
         widget.api.get(
-          '/mobile/buyer/orders',
-          audience: 'buyer',
-          query: {'per_page': 10},
+          '/mobile/events',
+          query: {'per_page': 8, 'period': 'past'},
         ),
+        widget.api.get('/mobile/events', query: buildHomeTrendingQuery()),
       ]);
-      tickets = buyerData[0];
-      orders = buyerData[1];
-    } catch (_) {}
-    return {
-      'upcoming': responses[0]['data'] ?? [],
-      'recommended': responses[1]['data'] ?? [],
-      'past': responses[2]['data'] ?? [],
-      'trending': responses[3]['data'] ?? [],
-      'tickets': tickets['tickets'] ?? [],
-      'orders': orders['data'] ?? [],
-      'recent': recent,
-    };
+      Map<String, dynamic> tickets = const {};
+      Map<String, dynamic> orders = const {};
+      try {
+        final buyerData = await Future.wait([
+          widget.api.get('/buyer/tickets', audience: 'buyer'),
+          widget.api.get(
+            '/mobile/buyer/orders',
+            audience: 'buyer',
+            query: {'per_page': 10},
+          ),
+        ]);
+        tickets = buyerData[0];
+        orders = buyerData[1];
+      } catch (_) {}
+      final result = <String, dynamic>{
+        'upcoming': responses[0]['data'] ?? [],
+        'recommended': responses[1]['data'] ?? [],
+        'past': responses[2]['data'] ?? [],
+        'trending': responses[3]['data'] ?? [],
+        'tickets': tickets['tickets'] ?? [],
+        'orders': orders['data'] ?? [],
+        'recent': recent,
+      };
+      await BuyerLocalStore.cacheHome(result);
+      return result;
+    } catch (_) {
+      final cached = await BuyerLocalStore.cachedHome();
+      if (cached != null) return {...cached, 'offline': true};
+      rethrow;
+    }
   }
 
   @override
@@ -891,6 +955,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
   DateTimeRange? dateRange;
   double? minPrice;
   double? maxPrice;
+  late Future<Map<String, dynamic>> eventsFuture = _events(1);
+  final extraEvents = <Map<String, dynamic>>[];
+  int currentPage = 1;
+  int lastPage = 1;
+  bool loadingMore = false;
   late Future<Map<String, dynamic>> categories = widget.api.get(
     '/mobile/categories',
   );
@@ -922,22 +991,72 @@ class _ExploreScreenState extends State<ExploreScreen> {
     maxPrice,
   ].where((value) => value != null).length;
 
-  Future<Map<String, dynamic>> _events() => widget.api.get(
-    '/mobile/events',
-    query: {
-      if (query.isNotEmpty) 'search': query,
-      if (categoryId != null) 'category_id': categoryId,
-      if (venueId != null) 'venue_id': venueId,
-      if (organizerId != null) 'organizer_id': organizerId,
-      if (dateRange != null)
-        'date_from': DateFormat('yyyy-MM-dd').format(dateRange!.start),
-      if (dateRange != null)
-        'date_to': DateFormat('yyyy-MM-dd').format(dateRange!.end),
-      if (minPrice != null) 'min_price': minPrice,
-      if (maxPrice != null) 'max_price': maxPrice,
-      'per_page': 30,
-    },
-  );
+  Future<Map<String, dynamic>> _events(int page) async {
+    try {
+      final response = await widget.api.get(
+        '/mobile/events',
+        query: {
+          if (query.isNotEmpty) 'search': query,
+          if (categoryId != null) 'category_id': categoryId,
+          if (venueId != null) 'venue_id': venueId,
+          if (organizerId != null) 'organizer_id': organizerId,
+          if (dateRange != null)
+            'date_from': DateFormat('yyyy-MM-dd').format(dateRange!.start),
+          if (dateRange != null)
+            'date_to': DateFormat('yyyy-MM-dd').format(dateRange!.end),
+          if (minPrice != null) 'min_price': minPrice,
+          if (maxPrice != null) 'max_price': maxPrice,
+          'page': page,
+          'per_page': 12,
+        },
+      );
+      if (page == 1 &&
+          query.isEmpty &&
+          categoryId == null &&
+          activeFilterCount == 0) {
+        await BuyerLocalStore.cacheExplore(response);
+      }
+      return response;
+    } catch (_) {
+      if (page == 1 &&
+          query.isEmpty &&
+          categoryId == null &&
+          activeFilterCount == 0) {
+        final cached = await BuyerLocalStore.cachedExplore();
+        if (cached != null) return {...cached, 'offline': true};
+      }
+      rethrow;
+    }
+  }
+
+  void _resetEvents() => setState(() {
+    currentPage = 1;
+    lastPage = 1;
+    extraEvents.clear();
+    eventsFuture = _events(1);
+  });
+
+  Future<void> _loadMoreEvents() async {
+    if (loadingMore || currentPage >= lastPage) return;
+    setState(() => loadingMore = true);
+    try {
+      final response = await _events(currentPage + 1);
+      final additions = (response['data'] as List? ?? const []).map(
+        (raw) => Map<String, dynamic>.from(raw as Map),
+      );
+      if (!mounted) return;
+      setState(() {
+        currentPage++;
+        extraEvents.addAll(additions);
+        lastPage =
+            (response['meta']?['last_page'] as num?)?.toInt() ?? currentPage;
+      });
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => loadingMore = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -952,15 +1071,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
         TextField(
           controller: search,
           textInputAction: TextInputAction.search,
-          onSubmitted: (value) => setState(() => query = value.trim()),
+          onSubmitted: (value) {
+            query = value.trim();
+            _resetEvents();
+          },
           decoration: InputDecoration(
             hintText: 'Search by event, venue or organizer',
             prefixIcon: const Icon(Icons.search_rounded),
             suffixIcon: IconButton(
-              onPressed: () => setState(() {
+              onPressed: () {
                 search.clear();
                 query = '';
-              }),
+                _resetEvents();
+              },
               icon: const Icon(Icons.close_rounded),
             ),
           ),
@@ -997,7 +1120,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ChoiceChip(
                     label: const Text('All'),
                     selected: categoryId == null,
-                    onSelected: (_) => setState(() => categoryId = null),
+                    onSelected: (_) {
+                      categoryId = null;
+                      _resetEvents();
+                    },
                   ),
                   const SizedBox(width: 8),
                   ...items.map((raw) {
@@ -1007,9 +1133,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       child: ChoiceChip(
                         label: Text(item['name'].toString()),
                         selected: categoryId == (item['id'] as num?)?.toInt(),
-                        onSelected: (_) => setState(
-                          () => categoryId = (item['id'] as num).toInt(),
-                        ),
+                        onSelected: (_) {
+                          categoryId = (item['id'] as num).toInt();
+                          _resetEvents();
+                        },
                       ),
                     );
                   }),
@@ -1023,10 +1150,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
           key: ValueKey(
             '$query-$categoryId-$venueId-$organizerId-$dateRange-$minPrice-$maxPrice',
           ),
-          future: _events(),
-          onRetry: () => setState(() {}),
+          future: eventsFuture,
+          skeleton: const SectionSkeleton(cards: 4, cardHeight: 150),
+          onRetry: _resetEvents,
           builder: (context, response) {
-            final events = response['data'] as List? ?? const [];
+            lastPage = (response['meta']?['last_page'] as num?)?.toInt() ?? 1;
+            final events = <Object?>[
+              ...List<Object?>.from(response['data'] as List? ?? const []),
+              ...extraEvents,
+            ];
             if (events.isEmpty) {
               return const EmptyState(
                 icon: Icons.search_off_rounded,
@@ -1035,22 +1167,42 @@ class _ExploreScreenState extends State<ExploreScreen> {
               );
             }
             return Column(
-              children: events.map((raw) {
-                final event = Map<String, dynamic>.from(raw as Map);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: EventCard(
-                    event: event,
-                    onTap: () => _openEvent(
-                      context,
-                      widget.api,
-                      event,
-                      widget.purchaseCompleted,
-                      widget.openTickets,
+              children: [
+                if (response['offline'] == true)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 14),
+                    child: _OfflineDataNotice(
+                      message: 'Showing your last saved event list.',
                     ),
                   ),
-                );
-              }).toList(),
+                ...events.map((raw) {
+                  final event = Map<String, dynamic>.from(raw as Map);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: EventCard(
+                      event: event,
+                      onTap: () => _openEvent(
+                        context,
+                        widget.api,
+                        event,
+                        widget.purchaseCompleted,
+                        widget.openTickets,
+                      ),
+                    ),
+                  );
+                }),
+                if (currentPage < lastPage)
+                  OutlinedButton.icon(
+                    onPressed: loadingMore ? null : _loadMoreEvents,
+                    icon: loadingMore
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.expand_more_rounded),
+                    label: const Text('Load more events'),
+                  ),
+              ],
             );
           },
         ),
@@ -1058,13 +1210,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
     ),
   );
 
-  void _clearFilters() => setState(() {
+  void _clearFilters() {
     venueId = null;
     organizerId = null;
     dateRange = null;
     minPrice = null;
     maxPrice = null;
-  });
+    _resetEvents();
+  }
 
   Future<void> _openFilters() async {
     try {
@@ -1085,13 +1238,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
       );
       if (result == null || !mounted) return;
-      setState(() {
-        venueId = result.venueId;
-        organizerId = result.organizerId;
-        dateRange = result.dateRange;
-        minPrice = result.minPrice;
-        maxPrice = result.maxPrice;
-      });
+      venueId = result.venueId;
+      organizerId = result.organizerId;
+      dateRange = result.dateRange;
+      minPrice = result.minPrice;
+      maxPrice = result.maxPrice;
+      _resetEvents();
     } catch (error) {
       if (mounted) showError(context, error);
     }
@@ -2807,6 +2959,10 @@ class _TicketsScreenState extends State<TicketsScreen>
                     const SizedBox(height: 14),
                     AsyncPanel(
                       future: tickets,
+                      skeleton: const SectionSkeleton(
+                        cards: 3,
+                        cardHeight: 198,
+                      ),
                       builder: (context, response) {
                         final all = (response['tickets'] as List? ?? const [])
                             .map((raw) => Map<String, dynamic>.from(raw as Map))
@@ -2821,38 +2977,48 @@ class _TicketsScreenState extends State<TicketsScreen>
                           );
                         }
                         return Column(
-                          children: items.map((raw) {
-                            final ticket = Map<String, dynamic>.from(raw);
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: WalletTicketCard(
-                                ticket: ticket,
-                                onQuickQr:
-                                    ticket['qr_raw']?.toString().isNotEmpty ==
-                                        true
-                                    ? () => _showQuickQr(ticket)
-                                    : null,
-                                onTap: () async {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => TicketDetailScreen(
-                                        api: widget.api,
-                                        ticket: ticket,
-                                      ),
-                                    ),
-                                  );
-                                  setState(() {
-                                    tickets = _loadTickets();
-                                    transfers = widget.api.get(
-                                      '/buyer/transfers',
-                                      audience: 'buyer',
-                                    );
-                                  });
-                                },
+                          children: [
+                            if (response['offline'] == true)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 14),
+                                child: _OfflineDataNotice(
+                                  message:
+                                      'Offline copy — reconnect to refresh ticket status.',
+                                ),
                               ),
-                            );
-                          }).toList(),
+                            ...items.map((raw) {
+                              final ticket = Map<String, dynamic>.from(raw);
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: WalletTicketCard(
+                                  ticket: ticket,
+                                  onQuickQr:
+                                      ticket['qr_raw']?.toString().isNotEmpty ==
+                                          true
+                                      ? () => _showQuickQr(ticket)
+                                      : null,
+                                  onTap: () async {
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => TicketDetailScreen(
+                                          api: widget.api,
+                                          ticket: ticket,
+                                        ),
+                                      ),
+                                    );
+                                    setState(() {
+                                      tickets = _loadTickets();
+                                      transfers = widget.api.get(
+                                        '/buyer/transfers',
+                                        audience: 'buyer',
+                                      );
+                                    });
+                                  },
+                                ),
+                              );
+                            }),
+                          ],
                         );
                       },
                     ),
@@ -2947,7 +3113,7 @@ class WalletTicketCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 184,
+    height: 198,
     child: Card(
       color: AppColors.navy,
       clipBehavior: Clip.antiAlias,
@@ -3008,11 +3174,26 @@ class WalletTicketCard extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          '${ticket['ticket_type'] ?? 'Admission'} • ${ticket['gate'] ?? 'Gate TBA'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white70),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${ticket['ticket_type'] ?? 'Admission'} • ${ticket['gate'] ?? 'Gate TBA'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${ticket['session'] ?? 'Main session'} • Seat ${ticket['seat'] ?? 'N/A'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       if (onQuickQr != null)
@@ -3060,7 +3241,8 @@ class _BrightQrSheet extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '${ticket['ticket_type'] ?? 'Admission'} • ${ticket['gate'] ?? 'Gate TBA'}',
+          '${ticket['ticket_type'] ?? 'Admission'} • ${ticket['session'] ?? 'Main session'} • ${ticket['gate'] ?? 'Gate TBA'} • Seat ${ticket['seat'] ?? 'N/A'}',
+          textAlign: TextAlign.center,
           style: const TextStyle(color: AppColors.muted),
         ),
         const SizedBox(height: 18),
@@ -3094,12 +3276,14 @@ class _BrightQrState extends State<_BrightQr> {
   void initState() {
     super.initState();
     ScreenBrightness.instance.setApplicationScreenBrightness(1);
+    TicketPrivacyGuard.enable();
     HapticFeedback.mediumImpact();
   }
 
   @override
   void dispose() {
     ScreenBrightness.instance.resetApplicationScreenBrightness();
+    TicketPrivacyGuard.disable();
     super.dispose();
   }
 
@@ -3128,103 +3312,119 @@ class TicketDetailScreen extends StatelessWidget {
   final Map<String, dynamic> ticket;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(ticket['label']?.toString() ?? 'Ticket')),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            color: AppColors.navy,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            children: [
-              Text(
-                ticket['event_name']?.toString() ?? 'Event',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                '${_dateLong(ticket['event_date'])}\n${ticket['venue'] ?? 'Venue TBA'}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, height: 1.5),
-              ),
-              const SizedBox(height: 24),
-              _BrightQr(data: ticket['qr_raw']?.toString() ?? '', size: 230),
-              const SizedBox(height: 12),
-              const Text(
-                'Present this QR at the venue entrance',
-                style: TextStyle(color: Colors.white60, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+  Widget build(BuildContext context) => _SecureTicketView(
+    child: Scaffold(
+      appBar: AppBar(title: Text(ticket['label']?.toString() ?? 'Ticket')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 36),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: AppColors.navy,
+              borderRadius: BorderRadius.circular(20),
+            ),
             child: Column(
               children: [
-                TicketInfo(
-                  label: 'Ticket type',
-                  value: ticket['ticket_type']?.toString(),
+                Text(
+                  ticket['event_name']?.toString() ?? 'Event',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                TicketInfo(label: 'Gate', value: ticket['gate']?.toString()),
-                TicketInfo(
-                  label: 'Seat',
-                  value: ticket['seat']?.toString() ?? 'N/A',
+                const SizedBox(height: 10),
+                Text(
+                  '${_dateLong(ticket['event_date'])}\n${ticket['venue'] ?? 'Venue TBA'}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, height: 1.5),
                 ),
-                TicketInfo(
-                  label: 'Holder',
-                  value: ticket['recipient_name']?.toString(),
-                ),
-                TicketInfo(
-                  label: 'Status',
-                  value: ticket['status']?.toString(),
+                const SizedBox(height: 24),
+                _BrightQr(data: ticket['qr_raw']?.toString() ?? '', size: 230),
+                const SizedBox(height: 12),
+                const Text(
+                  'Present this QR at the venue entrance',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: () => _download(context),
-          icon: const Icon(Icons.picture_as_pdf_rounded),
-          label: const Text('Download one-time PDF'),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final sent = await showModalBottomSheet<bool>(
-              context: context,
-              isScrollControlled: true,
-              useSafeArea: true,
-              showDragHandle: false,
-              backgroundColor: Colors.transparent,
-              builder: (_) => TransferSheet(api: api, ticket: ticket),
-            );
-            if (sent == true && context.mounted) {
-              showAppNotice(
-                context,
-                'Transfer request sent. Waiting for recipient approval.',
-              );
-            }
-          },
-          icon: const Icon(Icons.swap_horiz_rounded),
-          label: const Text('Transfer this ticket'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(54),
-            shape: const StadiumBorder(),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  TicketInfo(
+                    label: 'Ticket type',
+                    value: ticket['ticket_type']?.toString(),
+                  ),
+                  TicketInfo(label: 'Gate', value: ticket['gate']?.toString()),
+                  TicketInfo(
+                    label: 'Session',
+                    value:
+                        ticket['session']?.toString() ??
+                        ((ticket['sessions'] as List?)?.isNotEmpty == true
+                            ? (ticket['sessions'] as List)
+                                  .map((session) {
+                                    final value = session as Map;
+                                    return value['name']?.toString() ?? '';
+                                  })
+                                  .where((name) => name.isNotEmpty)
+                                  .join(', ')
+                            : 'Main session'),
+                  ),
+                  TicketInfo(
+                    label: 'Seat',
+                    value: ticket['seat']?.toString() ?? 'N/A',
+                  ),
+                  TicketInfo(
+                    label: 'Holder',
+                    value: ticket['recipient_name']?.toString(),
+                  ),
+                  TicketInfo(
+                    label: 'Status',
+                    value: ticket['status']?.toString(),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: () => _download(context),
+            icon: const Icon(Icons.picture_as_pdf_rounded),
+            label: const Text('Download one-time PDF'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final sent = await showModalBottomSheet<bool>(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                showDragHandle: false,
+                backgroundColor: Colors.transparent,
+                builder: (_) => TransferSheet(api: api, ticket: ticket),
+              );
+              if (sent == true && context.mounted) {
+                showAppNotice(
+                  context,
+                  'Transfer request sent. Waiting for recipient approval.',
+                );
+              }
+            },
+            icon: const Icon(Icons.swap_horiz_rounded),
+            label: const Text('Transfer this ticket'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              shape: const StadiumBorder(),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 
@@ -3242,6 +3442,32 @@ class TicketDetailScreen extends StatelessWidget {
       if (context.mounted) showError(context, error);
     }
   }
+}
+
+class _SecureTicketView extends StatefulWidget {
+  const _SecureTicketView({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_SecureTicketView> createState() => _SecureTicketViewState();
+}
+
+class _SecureTicketViewState extends State<_SecureTicketView> {
+  @override
+  void initState() {
+    super.initState();
+    TicketPrivacyGuard.enable();
+  }
+
+  @override
+  void dispose() {
+    TicketPrivacyGuard.disable();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class TransferSheet extends StatefulWidget {
@@ -3786,10 +4012,29 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  late Future<Map<String, dynamic>> future = widget.api.get(
-    '/mobile/buyer/orders',
-    audience: 'buyer',
-  );
+  late Future<Map<String, dynamic>> future = _loadPage(1);
+  final extraOrders = <Map<String, dynamic>>[];
+  int currentPage = 1;
+  int lastPage = 1;
+  bool loadingMore = false;
+
+  Future<Map<String, dynamic>> _loadPage(int page) async {
+    try {
+      final response = await widget.api.get(
+        '/mobile/buyer/orders',
+        audience: 'buyer',
+        query: {'page': page, 'per_page': 12},
+      );
+      if (page == 1) await BuyerLocalStore.cacheOrders(response);
+      return response;
+    } catch (_) {
+      if (page == 1) {
+        final cached = await BuyerLocalStore.cachedOrders();
+        if (cached != null) return {...cached, 'offline': true};
+      }
+      rethrow;
+    }
+  }
 
   @override
   void initState() {
@@ -3799,9 +4044,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   void _reload() {
     if (!mounted) return;
-    setState(
-      () => future = widget.api.get('/mobile/buyer/orders', audience: 'buyer'),
-    );
+    setState(() {
+      currentPage = 1;
+      lastPage = 1;
+      extraOrders.clear();
+      future = _loadPage(1);
+    });
+  }
+
+  Future<void> _loadMore() async {
+    if (loadingMore || currentPage >= lastPage) return;
+    setState(() => loadingMore = true);
+    try {
+      final response = await _loadPage(currentPage + 1);
+      final additions = (response['data'] as List? ?? const []).map(
+        (raw) => Map<String, dynamic>.from(raw as Map),
+      );
+      if (!mounted) return;
+      setState(() {
+        currentPage++;
+        extraOrders.addAll(additions);
+        lastPage =
+            (response['meta']?['last_page'] as num?)?.toInt() ?? currentPage;
+      });
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => loadingMore = false);
+    }
   }
 
   @override
@@ -3813,10 +4083,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) => SafeArea(
     child: SlktRefresh(
-      onRefresh: () async => setState(
-        () =>
-            future = widget.api.get('/mobile/buyer/orders', audience: 'buyer'),
-      ),
+      onRefresh: () async {
+        _reload();
+        await future;
+      },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 36),
         children: [
@@ -3827,8 +4097,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: 22),
           AsyncPanel(
             future: future,
+            skeleton: const SectionSkeleton(cards: 4, cardHeight: 138),
             builder: (context, response) {
-              final items = response['data'] as List? ?? const [];
+              lastPage = (response['meta']?['last_page'] as num?)?.toInt() ?? 1;
+              final items = <Object?>[
+                ...List<Object?>.from(response['data'] as List? ?? const []),
+                ...extraOrders,
+              ];
               if (items.isEmpty) {
                 return const EmptyState(
                   icon: Icons.receipt_long_outlined,
@@ -3837,96 +4112,123 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 );
               }
               return Column(
-                children: items.map((raw) {
-                  final order = Map<String, dynamic>.from(raw as Map);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Card(
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => OrderDetailScreen(
-                                api: widget.api,
-                                order: order,
-                                openTickets: widget.openTickets,
+                children: [
+                  if (response['offline'] == true)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 14),
+                      child: _OfflineDataNotice(
+                        message: 'Showing your last saved orders.',
+                      ),
+                    ),
+                  ...items.map((raw) {
+                    final order = Map<String, dynamic>.from(raw as Map);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Card(
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => OrderDetailScreen(
+                                  api: widget.api,
+                                  order: order,
+                                  openTickets: widget.openTickets,
+                                ),
                               ),
-                            ),
-                          );
-                          _reload();
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  StatusChip(
-                                    label:
-                                        order['status']
-                                            ?.toString()
-                                            .toUpperCase() ??
-                                        'PENDING',
-                                    color: _statusColor(
-                                      order['status']?.toString(),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    order['order_number']?.toString() ?? '',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                order['event']?['name']?.toString() ??
-                                    'Event order',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.titleLarge?.copyWith(fontSize: 17),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '${order['total_amount']} ${order['currency'] ?? 'EGP'} • ${_date(order['created_at'])}',
-                                style: const TextStyle(color: AppColors.muted),
-                              ),
-                              if (order['status']?.toString() == 'pending') ...[
-                                const SizedBox(height: 12),
-                                const Row(
+                            );
+                            _reload();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   children: [
-                                    Icon(
-                                      Icons.play_circle_outline_rounded,
-                                      size: 18,
-                                      color: AppColors.coralDark,
-                                    ),
-                                    SizedBox(width: 7),
-                                    Text(
-                                      'Open to continue payment',
-                                      style: TextStyle(
-                                        color: AppColors.coralDark,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12,
+                                    StatusChip(
+                                      label:
+                                          order['status']
+                                              ?.toString()
+                                              .toUpperCase() ??
+                                          'PENDING',
+                                      color: _statusColor(
+                                        order['status']?.toString(),
                                       ),
                                     ),
-                                    Spacer(),
-                                    Icon(Icons.chevron_right_rounded),
+                                    const Spacer(),
+                                    Text(
+                                      order['order_number']?.toString() ?? '',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
                                   ],
                                 ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  order['event']?['name']?.toString() ??
+                                      'Event order',
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontSize: 17),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${order['total_amount']} ${order['currency'] ?? 'EGP'} • ${_date(order['created_at'])}',
+                                  style: const TextStyle(
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                                if (order['status']?.toString() ==
+                                    'pending') ...[
+                                  const SizedBox(height: 12),
+                                  const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.play_circle_outline_rounded,
+                                        size: 18,
+                                        color: AppColors.coralDark,
+                                      ),
+                                      SizedBox(width: 7),
+                                      Text(
+                                        'Open to continue payment',
+                                        style: TextStyle(
+                                          color: AppColors.coralDark,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Spacer(),
+                                      Icon(Icons.chevron_right_rounded),
+                                    ],
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ),
+                    );
+                  }),
+                  if (currentPage < lastPage)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: OutlinedButton.icon(
+                        onPressed: loadingMore ? null : _loadMore,
+                        icon: loadingMore
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.expand_more_rounded),
+                        label: const Text('Load more orders'),
+                      ),
                     ),
-                  );
-                }).toList(),
+                ],
               );
             },
           ),
@@ -4718,16 +5020,27 @@ class _OrganizerProfileCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipOval(
-              child: SizedBox(
-                width: 54,
-                height: 54,
+            Container(
+              width: 58,
+              height: 58,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE4DDD7)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: ClipOval(
                 child: logo == null || logo.isEmpty
                     ? const ColoredBox(
                         color: AppColors.yellow,
                         child: Icon(Icons.apartment_rounded),
                       )
-                    : EventImage(url: logo),
+                    : EventImage(
+                        url: logo,
+                        fit: BoxFit.contain,
+                        backgroundColor: Colors.white,
+                      ),
               ),
             ),
             const SizedBox(width: 14),
@@ -5143,16 +5456,55 @@ class _VenueGalleryCardState extends State<VenueGalleryCard> {
   }
 }
 
+class _OfflineDataNotice extends StatelessWidget {
+  const _OfflineDataNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF6D2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE9CD5C)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.offline_bolt_rounded, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class EventImage extends StatelessWidget {
-  const EventImage({super.key, this.url});
+  const EventImage({
+    super.key,
+    this.url,
+    this.fit = BoxFit.cover,
+    this.backgroundColor = const Color(0xFFE7DCD5),
+  });
   final String? url;
+  final BoxFit fit;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     final value = url;
     if (value == null || value.isEmpty) {
       return Container(
-        color: const Color(0xFFE7DCD5),
+        color: backgroundColor,
         child: const Icon(
           Icons.celebration_rounded,
           color: AppColors.coral,
@@ -5163,14 +5515,37 @@ class EventImage extends StatelessWidget {
     final absolute = value.startsWith('http')
         ? value
         : 'https://slktegy.com/${value.replaceFirst(RegExp(r'^/'), '')}';
-    return CachedNetworkImage(
-      imageUrl: absolute,
-      fit: BoxFit.cover,
-      placeholder: (_, _) => Container(color: const Color(0xFFE7DCD5)),
-      errorWidget: (_, _, _) => Container(
-        color: const Color(0xFFE7DCD5),
-        child: const Icon(Icons.celebration_rounded, color: AppColors.coral),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final logicalWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final logicalHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : logicalWidth * .65;
+        final cacheWidth = (logicalWidth * dpr).round().clamp(320, 2160);
+        final cacheHeight = (logicalHeight * dpr).round().clamp(180, 2160);
+        return CachedNetworkImage(
+          imageUrl: absolute,
+          fit: fit,
+          memCacheWidth: cacheWidth,
+          memCacheHeight: cacheHeight,
+          maxWidthDiskCache: cacheWidth,
+          maxHeightDiskCache: cacheHeight,
+          fadeInDuration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
+          placeholder: (_, _) => Container(color: backgroundColor),
+          errorWidget: (_, _, _) => Container(
+            color: backgroundColor,
+            child: const Icon(
+              Icons.celebration_rounded,
+              color: AppColors.coral,
+            ),
+          ),
+        );
+      },
     );
   }
 }
