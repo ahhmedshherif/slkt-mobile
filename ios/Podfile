@@ -34,6 +34,11 @@ target 'Runner' do
     inherit! :search_paths
   end
 
+  target 'OneSignalNotificationServiceExtension' do
+    inherit! :search_paths
+    pod 'OneSignalXCFramework/OneSignal', '5.5.1'
+  end
+
 end
 
 post_install do |installer|

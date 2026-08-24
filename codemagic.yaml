@@ -43,8 +43,8 @@ workflows:
       xcode: latest
       cocoapods: default
       ios_signing:
-        distribution_type: development
-        bundle_identifier: com.rahul.group32
+        distribution_type: app_store
+        bundle_identifier: com.slktegy.evntsApp
       vars:
         API_BASE_URL: "https://slktegy.com/api/v1"
         ONESIGNAL_APP_ID: "c39ec100-bcb6-4a3f-b07d-12035107cd5e"
