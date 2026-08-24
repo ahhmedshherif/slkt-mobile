@@ -60,14 +60,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        color: AppColors.canvas,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(36),
-                        ),
+                    child: Material(
+                      color: AppColors.canvas,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(36),
                       ),
+                      clipBehavior: Clip.antiAlias,
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(24, 30, 24, 36),
                         child: AnimatedSwitcher(
