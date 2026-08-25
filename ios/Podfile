@@ -33,12 +33,14 @@ target 'Runner' do
   target 'RunnerTests' do
     inherit! :search_paths
   end
+end
 
-  target 'OneSignalNotificationServiceExtension' do
-    inherit! :search_paths
-    pod 'OneSignalXCFramework/OneSignal', '5.5.1'
-  end
-
+# Keep the notification service extension as a sibling target. Nesting it
+# under Runner makes it inherit the Flutter OneSignal pod and then install the
+# native OneSignal pod again, which produces duplicate framework build steps.
+target 'OneSignalNotificationServiceExtension' do
+  use_frameworks!
+  pod 'OneSignalXCFramework/OneSignal', '5.5.1'
 end
 
 post_install do |installer|
