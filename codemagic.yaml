@@ -56,6 +56,7 @@ workflows:
     scripts:
       - name: Get Flutter packages
         script: |
+          flutter config --no-enable-swift-package-manager
           flutter clean
           flutter pub get
       - name: Install CocoaPods
