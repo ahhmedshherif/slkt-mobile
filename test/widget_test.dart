@@ -80,25 +80,21 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(theme: buildTheme(), home: const SplashScreen()),
     );
-    await tester.pump(const Duration(milliseconds: 1800));
+    expect(find.byKey(const ValueKey('splash-primary-logo')), findsOneWidget);
+    expect(find.byKey(const ValueKey('splash-signature-dot')), findsOneWidget);
 
-    expect(find.text('SELECT SMART. ENTER SMOOTH.'), findsOneWidget);
-    for (var index = 0; index < 7; index++) {
-      expect(find.byKey(ValueKey('splash-letter-$index')), findsWidgets);
-    }
+    await tester.pump(const Duration(milliseconds: 3200));
+    expect(find.byKey(const ValueKey('splash-app-logo')), findsOneWidget);
   });
 
-  testWidgets('brand mark renders the black TKTS APP wordmark', (tester) async {
+  testWidgets('brand mark renders the primary traced TKTS wordmark', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: BrandMark())),
     );
 
-    expect(
-      find.image(
-        const AssetImage('assets/brand/tkts-wordmark-transparent.png'),
-      ),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('tkts-primary-wordmark')), findsOneWidget);
   });
 
   testWidgets('onboarding explains discover, booking and ticket delivery', (
@@ -205,7 +201,7 @@ void main() {
   test('payment redirect only accepts the trusted SLKT return URL', () {
     const path = '/checkout/42/success';
     expect(
-      isCheckoutReturnUrl('https://slktegy.com$path?success=true', path),
+      isCheckoutReturnUrl('https://tktsapp.com$path?success=true', path),
       isTrue,
     );
     expect(
@@ -213,7 +209,7 @@ void main() {
       isFalse,
     );
     expect(
-      isCheckoutReturnUrl('http://slktegy.com$path?success=true', path),
+      isCheckoutReturnUrl('http://tktsapp.com$path?success=true', path),
       isFalse,
     );
   });
@@ -276,21 +272,21 @@ void main() {
     );
     expect(
       isTrustedPaymentNavigationUrl(
-        Uri.parse('https://slktegy.com$redirectPath?success=true'),
+        Uri.parse('https://tktsapp.com$redirectPath?success=true'),
         redirectPath,
       ),
       isTrue,
     );
     expect(
       isTrustedPaymentNavigationUrl(
-        Uri.parse('https://api.slktegy.com/api/v1/mobile/ping'),
+        Uri.parse('https://api.tktsapp.com/api/v1/mobile/ping'),
         redirectPath,
       ),
       isTrue,
     );
     expect(
       isTrustedPaymentNavigationUrl(
-        Uri.parse('https://slktegy.com/buyer'),
+        Uri.parse('https://tktsapp.com/buyer'),
         redirectPath,
       ),
       isFalse,
@@ -406,9 +402,9 @@ void main() {
   });
 
   test('ticket links accept only the trusted SLKT destinations', () {
-    expect(isTicketsAppLink(Uri.parse('https://slktegy.com/tickets')), isTrue);
+    expect(isTicketsAppLink(Uri.parse('https://tktsapp.com/tickets')), isTrue);
     expect(
-      isTicketsAppLink(Uri.parse('https://slktegy.com/tickets/order')),
+      isTicketsAppLink(Uri.parse('https://tktsapp.com/tickets/order')),
       isTrue,
     );
     expect(isTicketsAppLink(Uri.parse('slkt://tickets')), isTrue);
@@ -416,7 +412,7 @@ void main() {
       isTicketsAppLink(Uri.parse('https://evil.example/tickets')),
       isFalse,
     );
-    expect(isTicketsAppLink(Uri.parse('http://slktegy.com/tickets')), isFalse);
+    expect(isTicketsAppLink(Uri.parse('http://tktsapp.com/tickets')), isFalse);
   });
 
   test('system bars are transparent for edge-to-edge rendering', () {

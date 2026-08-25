@@ -1314,7 +1314,7 @@ bool isTrustedPaymentNavigationUrl(Uri uri, String redirectPath) {
   if (isTrustedPaymobHost(uri.host)) return true;
 
   final host = uri.host.toLowerCase();
-  final trustedApiHost = host == 'slktegy.com' || host.endsWith('.slktegy.com');
+  final trustedApiHost = host == 'tktsapp.com' || host.endsWith('.tktsapp.com');
   if (!trustedApiHost) return false;
 
   return uri.path == redirectPath || uri.path.startsWith('/api/');
@@ -1324,6 +1324,6 @@ bool isCheckoutReturnUrl(String value, String redirectPath) {
   final uri = Uri.tryParse(value);
   if (uri == null || uri.scheme != 'https') return false;
   final trustedHost =
-      uri.host == 'slktegy.com' || uri.host.endsWith('.slktegy.com');
+      uri.host == 'tktsapp.com' || uri.host.endsWith('.tktsapp.com');
   return trustedHost && uri.path == redirectPath;
 }

@@ -5514,7 +5514,7 @@ class EventImage extends StatelessWidget {
     }
     final absolute = value.startsWith('http')
         ? value
-        : 'https://slktegy.com/${value.replaceFirst(RegExp(r'^/'), '')}';
+        : 'https://tktsapp.com/${value.replaceFirst(RegExp(r'^/'), '')}';
     return LayoutBuilder(
       builder: (context, constraints) {
         final dpr = MediaQuery.devicePixelRatioOf(context);

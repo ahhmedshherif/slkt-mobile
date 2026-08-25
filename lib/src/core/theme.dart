@@ -3,17 +3,25 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 abstract final class AppColors {
-  static const yellow = Color(0xFFFFE56B);
-  static const lavender = Color(0xFFA8A8F0);
-  static const black = Color(0xFF0B0B0B);
-  static const coral = Color(0xFFD97757);
-  static const coralDark = Color(0xFF99462A);
-  static const ink = Color(0xFF1F1A17);
-  static const navy = Color(0xFF10172A);
-  static const canvas = Color(0xFFF6F3EF);
-  static const paper = Color(0xFFFFFBF7);
-  static const muted = Color(0xFF716660);
-  static const line = Color(0xFFEADAD0);
+  static const burgundy = Color(0xFF541627);
+  static const oxblood = Color(0xFF260A11);
+  static const charcoal = Color(0xFF181416);
+  static const ivory = Color(0xFFF4EFE8);
+  static const gold = Color(0xFFB89A6A);
+
+  // Compatibility aliases keep feature screens consistent while the complete
+  // interface inherits the new TKTS brand system from a single source.
+  static const yellow = gold;
+  static const lavender = gold;
+  static const black = charcoal;
+  static const coral = burgundy;
+  static const coralDark = oxblood;
+  static const ink = charcoal;
+  static const navy = oxblood;
+  static const canvas = ivory;
+  static const paper = ivory;
+  static const muted = Color(0xFF6E6265);
+  static const line = Color(0x55B89A6A);
   static const success = Color(0xFF087F5B);
 }
 
@@ -80,7 +88,7 @@ ThemeData buildTheme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF0ECE8),
+      fillColor: AppColors.gold.withValues(alpha: .10),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -100,9 +108,9 @@ ThemeData buildTheme() {
         minimumSize: const Size.fromHeight(56),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         backgroundColor: AppColors.black,
-        foregroundColor: AppColors.yellow,
+        foregroundColor: AppColors.ivory,
         disabledBackgroundColor: AppColors.black.withValues(alpha: .35),
-        disabledForegroundColor: AppColors.yellow.withValues(alpha: .65),
+        disabledForegroundColor: AppColors.ivory.withValues(alpha: .65),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
         animationDuration: const Duration(milliseconds: 180),
       ),

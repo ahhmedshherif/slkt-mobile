@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -18,7 +20,7 @@ import 'widgets/common.dart';
 bool isTicketsAppLink(Uri link) {
   final isWebTicketsLink =
       link.scheme == 'https' &&
-      link.host.toLowerCase() == 'slktegy.com' &&
+      link.host.toLowerCase() == 'tktsapp.com' &&
       (link.path == '/tickets' || link.path.startsWith('/tickets/'));
   final isCustomTicketsLink =
       link.scheme == 'slkt' && link.host.toLowerCase() == 'tickets';
@@ -57,8 +59,11 @@ class _EvntsAppState extends State<EvntsApp> {
   @override
   void initState() {
     super.initState();
-    timer = Timer(const Duration(milliseconds: 3200), () {
-      if (mounted) setState(() => minimumSplashDone = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      timer = Timer(const Duration(milliseconds: 4200), () {
+        if (mounted) setState(() => minimumSplashDone = true);
+      });
     });
     appLinkSubscription = appLinks.uriLinkStream.listen(_handleAppLink);
     unawaited(_readInitialAppLink());
@@ -401,8 +406,11 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..forward();
+      duration: const Duration(milliseconds: 4000),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) controller.forward();
+    });
   }
 
   @override
@@ -416,114 +424,173 @@ class _SplashScreenState extends State<SplashScreen>
     final reduced = MediaQuery.disableAnimationsOf(context);
     if (reduced && !controller.isCompleted) controller.value = 1;
 
-    return Scaffold(
-      backgroundColor: AppColors.black,
-      body: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          final progress = controller.value;
-          final darkScene = Curves.easeInOutCubic.transform(
-            const Interval(.56, .74).transform(progress),
-          );
-          final underline = Curves.easeOutExpo.transform(
-            const Interval(.42, .66).transform(progress),
-          );
-          final tagline = Curves.easeOutCubic.transform(
-            const Interval(.68, .82).transform(progress),
-          );
-          final exit =
-              1 -
-              Curves.easeInCubic.transform(
-                const Interval(.9, 1).transform(progress),
-              );
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) => _CinematicSplashCanvas(
+        progress: controller.value,
+        reduceMotion: reduced,
+      ),
+    );
+  }
+}
 
-          return AnnotatedRegion(
-            value: progress < .66 ? AppSystemUi.dark : AppSystemUi.light,
-            child: Stack(
+class _CinematicSplashCanvas extends StatelessWidget {
+  const _CinematicSplashCanvas({
+    required this.progress,
+    required this.reduceMotion,
+  });
+
+  final double progress;
+  final bool reduceMotion;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = reduceMotion ? 1.0 : progress;
+    final groupShift = Curves.easeInOutCubic.transform(
+      _splashInterval(p, .22, .46),
+    );
+    final appReveal = Curves.easeOutCubic.transform(
+      _splashInterval(p, .38, .72),
+    );
+    final dotFade =
+        1 - Curves.easeInCubic.transform(_splashInterval(p, .69, .79));
+    final settle = Curves.easeOutCubic.transform(_splashInterval(p, .70, .88));
+    final contrast = Curves.easeInOutCubic.transform(
+      _splashInterval(p, .28, .53),
+    );
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: p < .34 ? AppSystemUi.dark : AppSystemUi.light,
+      child: Scaffold(
+        backgroundColor: AppColors.ivory,
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            final tktsWidth = math.min(size.width * .59, 276.0);
+            final tktsHeight = tktsWidth * (140 / 470);
+            final tktsContentWidth = tktsWidth * (402 / 470);
+            final appHeight = tktsHeight * .48;
+            final appWidth = appHeight * (157 / 56);
+            final gap = math.max(7.0, tktsHeight * .09);
+            final groupWidth = tktsContentWidth + gap + appWidth;
+            final openingLeft = (size.width - tktsWidth) / 2;
+            final finalLeft = (size.width - groupWidth) / 2;
+            final logoLeft =
+                openingLeft + (finalLeft - openingLeft) * groupShift;
+            final logoTop = (size.height - tktsHeight) / 2 + 8 * (1 - settle);
+            final appLeft = finalLeft + tktsContentWidth + gap;
+            final appTop = logoTop + tktsHeight * .46;
+            final dotStart = Offset(
+              openingLeft + tktsWidth * (425.6 / 470),
+              (size.height - tktsHeight) / 2 + tktsHeight * (108.5 / 140),
+            );
+            final dotDock = Offset(
+              appLeft - gap * .35,
+              appTop + appHeight * .70,
+            );
+            final dotAcross = Offset(
+              appLeft + appWidth,
+              appTop + appHeight * .70,
+            );
+            final dockProgress = Curves.easeInOutCubic.transform(
+              _splashInterval(p, .22, .42),
+            );
+            final slideProgress = Curves.easeInOutCubic.transform(
+              _splashInterval(p, .40, .72),
+            );
+            final dockedDot = Offset.lerp(dotStart, dotDock, dockProgress)!;
+            final movingDot = Offset.lerp(dockedDot, dotAcross, slideProgress)!;
+            final dotRadius = math.max(6.0, tktsHeight * (14.5 / 140));
+            final dotStretch = math.sin(appReveal * math.pi).clamp(0.0, 1.0);
+            final dotWidth = dotRadius * 2 * (1 + .72 * dotStretch);
+            final logoColor = Color.lerp(
+              AppColors.burgundy,
+              AppColors.ivory,
+              contrast,
+            )!;
+
+            return Stack(
               fit: StackFit.expand,
               children: [
-                const ColoredBox(color: AppColors.yellow),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FractionallySizedBox(
-                    widthFactor: darkScene,
-                    heightFactor: 1,
-                    child: const ColoredBox(color: AppColors.black),
+                RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _DotRevealBackgroundPainter(
+                      progress: p,
+                      origin: dotStart,
+                    ),
                   ),
                 ),
-                Opacity(
-                  opacity: .08 * exit,
-                  child: _AmbientBarcode(
-                    progress: progress,
-                    color: Color.lerp(
-                      AppColors.black,
-                      AppColors.yellow,
-                      darkScene,
-                    )!,
+                Positioned(
+                  left: logoLeft,
+                  top: logoTop,
+                  width: tktsWidth,
+                  height: tktsHeight,
+                  child: SvgPicture.asset(
+                    'assets/brand/tkts-reference-traced-letters.svg',
+                    key: const ValueKey('splash-primary-logo'),
+                    fit: BoxFit.contain,
+                    colorFilter: ColorFilter.mode(logoColor, BlendMode.srcIn),
                   ),
                 ),
-                Center(
+                Positioned(
+                  left: appLeft,
+                  top: appTop,
+                  width: appWidth,
+                  height: appHeight,
+                  child: ClipRect(
+                    clipper: _HorizontalRevealClipper(appReveal),
+                    child: Transform.translate(
+                      offset: Offset(18 * (1 - appReveal), 0),
+                      child: Opacity(
+                        opacity: appReveal,
+                        child: SvgPicture.asset(
+                          'assets/brand/tkts-app-label.svg',
+                          key: const ValueKey('splash-app-logo'),
+                          width: appWidth,
+                          height: appHeight,
+                          fit: BoxFit.fill,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                for (var echo = 0; echo < 2; echo++)
+                  if (p > .30 && p < .72)
+                    Positioned(
+                      left: movingDot.dx - dotRadius - 8 - echo * 9,
+                      top: movingDot.dy - dotRadius,
+                      width: dotRadius * 2,
+                      height: dotRadius * 2,
+                      child: Opacity(
+                        opacity: (.15 - echo * .045) * dotFade,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: AppColors.gold,
+                              width: 1.2,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                Positioned(
+                  left: movingDot.dx - dotWidth / 2,
+                  top: movingDot.dy - dotRadius,
+                  width: dotWidth,
+                  height: dotRadius * 2,
                   child: Opacity(
-                    opacity: exit,
-                    child: Transform.scale(
-                      scale: .96 + (.04 * exit),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Opacity(
-                                opacity: 1 - darkScene,
-                                child: _SplashLetters(
-                                  progress: progress,
-                                  color: AppColors.black,
-                                ),
-                              ),
-                              Opacity(
-                                opacity: darkScene,
-                                child: _SplashLetters(
-                                  progress: progress,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Align(
-                            widthFactor: 1,
-                            child: Container(
-                              width: 236 * underline,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: Color.lerp(
-                                  AppColors.black,
-                                  AppColors.yellow,
-                                  darkScene,
-                                ),
-                                borderRadius: BorderRadius.circular(99),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          Opacity(
-                            opacity: tagline,
-                            child: Transform.translate(
-                              offset: Offset(0, 10 * (1 - tagline)),
-                              child: Text(
-                                'SELECT SMART. ENTER SMOOTH.',
-                                style: TextStyle(
-                                  color: Color.lerp(
-                                    AppColors.black,
-                                    Colors.white,
-                                    darkScene,
-                                  ),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 2.4,
-                                ),
-                              ),
-                            ),
+                    opacity: dotFade,
+                    child: DecoratedBox(
+                      key: const ValueKey('splash-signature-dot'),
+                      decoration: BoxDecoration(
+                        color: AppColors.gold,
+                        borderRadius: BorderRadius.circular(dotRadius),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.gold.withValues(alpha: .22),
+                            blurRadius: 22,
+                            spreadRadius: 2,
                           ),
                         ],
                       ),
@@ -531,106 +598,78 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SplashLetters extends StatelessWidget {
-  const _SplashLetters({required this.progress, required this.color});
-
-  final double progress;
-  final Color color;
-
-  static const _letters = ['T', 'K', 'T', 'S', 'A', 'P', 'P'];
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: 'TKTS APP',
-    image: true,
-    child: ExcludeSemantics(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: List.generate(_letters.length, (index) {
-          final start = .035 + (index * .052);
-          final end = start + .2;
-          final raw = Interval(start, end).transform(progress);
-          final enter = Curves.easeOutBack.transform(raw);
-          final isApp = index >= 4;
-          final direction = index.isEven ? -1.0 : 1.0;
-
-          return Padding(
-            padding: EdgeInsets.only(left: index == 4 ? 16 : 0),
-            child: Opacity(
-              opacity: raw.clamp(0, 1),
-              child: Transform.translate(
-                offset: Offset(
-                  direction * 9 * (1 - enter),
-                  (isApp ? 52 : -64) * (1 - enter),
-                ),
-                child: Transform.rotate(
-                  angle: direction * .09 * (1 - enter),
-                  child: Transform.scale(
-                    scale: .72 + (.28 * enter),
-                    child: Text(
-                      _letters[index],
-                      key: ValueKey('splash-letter-$index'),
-                      style: TextStyle(
-                        color: color,
-                        fontSize: isApp ? 46 : 58,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -3,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    ),
-  );
-}
-
-class _AmbientBarcode extends StatelessWidget {
-  const _AmbientBarcode({
-    required this.progress,
-    this.color = AppColors.yellow,
-  });
-
-  final double progress;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final drift = Curves.easeInOutSine.transform(progress);
-    return IgnorePointer(
-      child: Opacity(
-        opacity: .1,
-        child: Transform.rotate(
-          angle: -math.pi / 10,
-          child: Transform.translate(
-            offset: Offset(-60 + (120 * drift), 0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(16, (index) {
-                final width = index.isEven ? 10.0 : 24.0;
-                return Container(
-                  width: width,
-                  height: MediaQuery.sizeOf(context).height * 1.25,
-                  color: index % 3 == 0 ? color.withValues(alpha: .55) : color,
-                );
-              }),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
   }
+}
+
+double _splashInterval(double value, double begin, double end) =>
+    ((value - begin) / (end - begin)).clamp(0.0, 1.0);
+
+class _HorizontalRevealClipper extends CustomClipper<Rect> {
+  const _HorizontalRevealClipper(this.progress);
+
+  final double progress;
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTWH(0, 0, size.width * progress, size.height);
+
+  @override
+  bool shouldReclip(covariant _HorizontalRevealClipper oldClipper) =>
+      oldClipper.progress != progress;
+}
+
+class _DotRevealBackgroundPainter extends CustomPainter {
+  const _DotRevealBackgroundPainter({
+    required this.progress,
+    required this.origin,
+  });
+
+  final double progress;
+  final Offset origin;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.ivory);
+    final corners = <Offset>[
+      Offset.zero,
+      Offset(size.width, 0),
+      Offset(0, size.height),
+      Offset(size.width, size.height),
+    ];
+    final maxRadius = corners
+        .map((corner) => (corner - origin).distance)
+        .reduce(math.max);
+    _drawField(
+      canvas,
+      AppColors.burgundy,
+      maxRadius,
+      Curves.easeInOutCubic.transform(_splashInterval(progress, .22, .45)),
+    );
+    _drawField(
+      canvas,
+      AppColors.oxblood,
+      maxRadius,
+      Curves.easeInOutCubic.transform(_splashInterval(progress, .38, .61)),
+    );
+    _drawField(
+      canvas,
+      AppColors.charcoal,
+      maxRadius,
+      Curves.easeInOutCubic.transform(_splashInterval(progress, .54, .78)),
+    );
+  }
+
+  void _drawField(Canvas canvas, Color color, double maxRadius, double reveal) {
+    if (reveal <= 0) return;
+    canvas.drawCircle(origin, maxRadius * reveal, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DotRevealBackgroundPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.origin != origin;
 }

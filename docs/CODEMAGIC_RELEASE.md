@@ -6,7 +6,7 @@ The repository root contains `codemagic.yaml` with two workflows:
   included macOS M2 runner.
 - `ios-release` builds a signed App Store IPA.
 
-Both workflows compile against `https://slktegy.com/api/v1` through the
+Both workflows compile against `https://tktsapp.com/api/v1` through the
 `API_BASE_URL` Dart define. No backend or signing secrets are stored in Git.
 
 ## One-time Codemagic setup

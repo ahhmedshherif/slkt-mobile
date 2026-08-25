@@ -7,7 +7,7 @@ Production Flutter client for the EvntsApp ticketing platform. The visual system
 The default API base URL is:
 
 ```text
-https://slktegy.com/api/v1
+https://tktsapp.com/api/v1
 ```
 
 Override it for local or staging builds without changing source code:

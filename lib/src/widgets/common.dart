@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../core/api_client.dart';
@@ -173,20 +174,16 @@ class BrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'TKTS APP',
+    label: 'TKTS',
     image: true,
-    child: ColorFiltered(
-      colorFilter: ColorFilter.mode(
-        dark ? Colors.white : AppColors.black,
-        BlendMode.srcIn,
-      ),
-      child: Image.asset(
-        'assets/brand/tkts-wordmark-transparent.png',
-        height: height,
-        width: height * 1.48,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-      ),
+    child: SvgPicture.asset(
+      dark
+          ? 'assets/brand/tkts-reference-traced-dark.svg'
+          : 'assets/brand/tkts-reference-traced.svg',
+      key: const ValueKey('tkts-primary-wordmark'),
+      height: height,
+      width: height * (470 / 140),
+      fit: BoxFit.contain,
     ),
   );
 }

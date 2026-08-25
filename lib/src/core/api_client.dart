@@ -20,7 +20,7 @@ class ApiClient {
         BaseOptions(
           baseUrl: const String.fromEnvironment(
             'API_BASE_URL',
-            defaultValue: 'https://slktegy.com/api/v1',
+            defaultValue: 'https://tktsapp.com/api/v1',
           ),
           connectTimeout: const Duration(seconds: 12),
           receiveTimeout: const Duration(seconds: 35),

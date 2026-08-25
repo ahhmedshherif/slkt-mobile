@@ -51,6 +51,7 @@ dependencies:
   onesignal_flutter: 5.5.2
   flutter_contacts: ^2.1.0
   screen_brightness: ^2.1.11
+  flutter_svg: ^2.2.3
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +78,11 @@ flutter:
   assets:
     - assets/brand/tkts-icon.png
     - assets/brand/tkts-wordmark-transparent.png
+    - assets/brand/tkts-reference-traced.svg
+    - assets/brand/tkts-reference-traced-dark.svg
+    - assets/brand/tkts-reference-traced-letters.svg
+    - assets/brand/tkts-reference-app.svg
+    - assets/brand/tkts-app-label.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:

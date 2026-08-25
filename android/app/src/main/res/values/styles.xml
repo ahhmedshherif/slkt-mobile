@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="slkt_yellow">#FFE56B</color>
-    <color name="slkt_black">#0B0B0B</color>
+    <color name="slkt_yellow">#F4EFE8</color>
+    <color name="slkt_black">#181416</color>
     <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <!-- Show a splash screen on the activity. Automatically removed when
