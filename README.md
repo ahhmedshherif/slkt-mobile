@@ -25,8 +25,9 @@ No database, SMS gateway, FTP, or administrator credentials belong in this app. 
 - Six-cell OTP input with 60-second resend cooldown
 - Event discovery, event details, checkout handoff, orders, ticket wallet, QR ticket, and one-time PDF download
 - Two-party ticket transfers with recipient lookup, sender confirmation, recipient approval/decline, cancellation, and transfer history
-- Organizer, event staff, scanner, analytics, team management, and administrator views
-- Secure buyer/staff token separation using platform secure storage
+- Buyer-only session routing and secure buyer token storage
+
+`lib/src/features/staff/staff_shell.dart` is retained only as a dormant prototype and is not reachable from the current application. Organizer/admin/scanner access must not be reintroduced into this buyer app; the approved direction is a future separate `TKTSAPP Organizers` application.
 
 ## Run and verify
 

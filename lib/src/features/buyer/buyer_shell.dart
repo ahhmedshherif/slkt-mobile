@@ -19,6 +19,7 @@ import '../../core/ticket_privacy_guard.dart';
 import '../../core/theme.dart';
 import '../../widgets/common.dart';
 import '../auth/auth_screen.dart';
+import '../legal/legal_webview_screen.dart';
 import 'checkout_flow.dart';
 
 Map<String, dynamic> buildHomeRecommendationQuery({
@@ -3398,6 +3399,18 @@ class TicketDetailScreen extends StatelessWidget {
             icon: const Icon(Icons.picture_as_pdf_rounded),
             label: const Text('Download one-time PDF'),
           ),
+          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: () => _addToAppleWallet(context),
+              icon: const Icon(Icons.account_balance_wallet_rounded),
+              label: const Text('Add to Apple Wallet'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: () async {
@@ -3437,6 +3450,21 @@ class TicketDetailScreen extends StatelessWidget {
       final url = Uri.parse(response['url'].toString());
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
         throw const ApiException('Could not open the PDF link.');
+      }
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
+  }
+
+  Future<void> _addToAppleWallet(BuildContext context) async {
+    try {
+      final response = await api.post(
+        '/buyer/tickets/${ticket['id']}/apple-wallet-link',
+        audience: 'buyer',
+      );
+      final url = Uri.parse(response['url'].toString());
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw const ApiException('Could not open Apple Wallet.');
       }
     } catch (error) {
       if (context.mounted) showError(context, error);
@@ -4723,7 +4751,7 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            const _ProfileSection(
+            _ProfileSection(
               title: 'Help & preferences',
               icon: Icons.tune_rounded,
               children: [
@@ -4736,6 +4764,33 @@ class ProfileScreen extends StatelessWidget {
                   icon: Icons.support_agent_rounded,
                   title: 'Help & support',
                   subtitle: 'Contact the TKTS APP team',
+                  onTap: () => _openLegalPage(context, LegalPage.contactUs),
+                ),
+                ProfileTile(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Privacy policy',
+                  subtitle: 'How information is handled',
+                  onTap: () => _openLegalPage(context, LegalPage.privacyPolicy),
+                ),
+                ProfileTile(
+                  icon: Icons.article_outlined,
+                  title: 'Terms & conditions',
+                  subtitle: 'Platform and event rules',
+                  onTap: () =>
+                      _openLegalPage(context, LegalPage.termsConditions),
+                ),
+                ProfileTile(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Purchase & refund policy',
+                  subtitle: 'Payments, tickets and refunds',
+                  onTap: () =>
+                      _openLegalPage(context, LegalPage.purchasePolicy),
+                ),
+                ProfileTile(
+                  icon: Icons.quiz_outlined,
+                  title: 'FAQs',
+                  subtitle: 'Quick ticketing answers',
+                  onTap: () => _openLegalPage(context, LegalPage.faqs),
                 ),
               ],
             ),
@@ -4752,6 +4807,12 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _openLegalPage(BuildContext context, LegalPage page) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => LegalWebViewScreen(page: page)),
     );
   }
 

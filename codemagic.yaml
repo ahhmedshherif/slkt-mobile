@@ -44,7 +44,7 @@ workflows:
       cocoapods: default
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.slktegy.evntsApp
+        bundle_identifier: com.tktsapp.jumpersagency
       vars:
         API_BASE_URL: "https://tktsapp.com/api/v1"
         ONESIGNAL_APP_ID: "c39ec100-bcb6-4a3f-b07d-12035107cd5e"

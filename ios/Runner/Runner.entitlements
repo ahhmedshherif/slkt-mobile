@@ -6,7 +6,7 @@
 	<string>$(APS_ENVIRONMENT)</string>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.slktegy.evntsApp.onesignal</string>
+		<string>group.com.tktsapp.jumpersagency.onesignal</string>
 	</array>
 </dict>
 </plist>

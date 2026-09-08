@@ -14,7 +14,7 @@ Both workflows compile against `https://tktsapp.com/api/v1` through the
 1. Add this GitHub repository as a Flutter application in Codemagic.
 2. For iOS, add an App Store Connect API key under the team's integrations.
 3. Upload or fetch an App Store distribution certificate and provisioning
-   profile matching `com.slktegy.evntsApp` under Code signing identities.
+   profile matching `com.tktsapp.jumpersagency` under Code signing identities.
 4. Run `SLKT Android APK & AAB` or `SLKT iOS IPA` from the `main` branch.
 
 Android currently keeps the project's existing signing behavior so the APK can
