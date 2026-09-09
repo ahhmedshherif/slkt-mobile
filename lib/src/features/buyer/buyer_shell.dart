@@ -4285,6 +4285,7 @@ class OrderDetailScreen extends StatefulWidget {
 class _OrderDetailScreenState extends State<OrderDetailScreen> {
   late Future<Map<String, dynamic>> future = _load();
   bool paymentBusy = false;
+  bool orderActionBusy = false;
 
   Future<Map<String, dynamic>> _load() => widget.api.get(
     '/mobile/buyer/orders/${widget.order['id']}',
@@ -4315,6 +4316,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               final items = order['items'] as List? ?? const [];
               final tickets = order['tickets'] as List? ?? const [];
               final canResume = order['can_resume_payment'] == true;
+              final canCancel = order['can_cancel_payment'] == true;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4450,7 +4452,34 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(color: AppColors.muted, fontSize: 12),
                     ),
-                  ] else if (order['status'] == 'paid') ...[
+                  ],
+                  if (canCancel) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: orderActionBusy ? null : () => _cancel(order),
+                      icon: orderActionBusy
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cancel_outlined),
+                      label: const Text('Cancel this payment'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red.shade800,
+                        minimumSize: const Size.fromHeight(50),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: orderActionBusy ? null : () => _reportProblem(order),
+                    icon: const Icon(Icons.support_agent_rounded),
+                    label: const Text('Report a problem'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(50),
+                    ),
+                  ),
+                  if (order['status'] == 'paid') ...[
                     const SizedBox(height: 18),
                     FilledButton.icon(
                       onPressed: () {
@@ -4508,6 +4537,99 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       widget.openTickets();
     } else {
       _reload();
+    }
+  }
+
+  Future<void> _cancel(Map<String, dynamic> order) async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel payment?'),
+        content: const Text(
+          'This releases your reservation immediately. If you already completed payment, do not cancel; wait for confirmation instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep order'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cancel payment'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+
+    setState(() => orderActionBusy = true);
+    try {
+      await widget.api.post(
+        '/mobile/buyer/orders/${order['id']}/cancel',
+        audience: 'buyer',
+      );
+      final event = Map<String, dynamic>.from(order['event'] as Map? ?? const {});
+      final slug = event['slug']?.toString() ?? '';
+      await BuyerLocalStore.clearPendingCheckout();
+      if (slug.isNotEmpty) await BuyerLocalStore.clearCheckoutAttempt(slug);
+      if (!mounted) return;
+      showAppNotice(context, 'Payment cancelled. You can start a fresh checkout.');
+      _reload();
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => orderActionBusy = false);
+    }
+  }
+
+  Future<void> _reportProblem(Map<String, dynamic> order) async {
+    final message = TextEditingController();
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Report a problem'),
+        content: TextField(
+          controller: message,
+          autofocus: true,
+          minLines: 3,
+          maxLines: 6,
+          maxLength: 4000,
+          decoration: InputDecoration(
+            labelText: 'What happened?',
+            helperText: 'Order ${order['order_number']} is attached automatically.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    final note = message.text.trim();
+    message.dispose();
+    if (sent != true || note.isEmpty || !mounted) return;
+
+    setState(() => orderActionBusy = true);
+    try {
+      await widget.api.post(
+        '/mobile/buyer/orders/${order['id']}/support',
+        audience: 'buyer',
+        data: {
+          'subject': 'Buyer reported an order issue',
+          'message': note,
+        },
+      );
+      if (mounted) showAppNotice(context, 'Support request sent with your order number.');
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => orderActionBusy = false);
     }
   }
 }
