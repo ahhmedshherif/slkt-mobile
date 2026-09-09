@@ -463,16 +463,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
       error = null;
     });
     try {
-      final response = await widget.api.post(
-        '/mobile/buyer/events/${widget.event['slug']}/checkout',
-        audience: 'buyer',
-        data: {
-          'quantities': payloadQuantities,
-          if (promo.text.trim().isNotEmpty) 'promo_code': promo.text.trim(),
-          'recipient_details': {},
-          'idempotency_key': checkoutAttemptKey,
-        },
-      );
+      final response = await _createCheckoutWithSafeRetry();
       final data = Map<String, dynamic>.from(response['data'] as Map);
       final checkoutUrl = Uri.tryParse(data['checkout_url']?.toString() ?? '');
       final orderId = (data['order_id'] as num?)?.toInt();
@@ -533,6 +524,36 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
     } finally {
       if (mounted) setState(() => checkoutBusy = false);
     }
+  }
+
+  Future<Map<String, dynamic>> _createCheckoutWithSafeRetry() async {
+    const attempts = 4;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      final response = await widget.api.post(
+        '/mobile/buyer/events/${widget.event['slug']}/checkout',
+        audience: 'buyer',
+        data: {
+          'quantities': payloadQuantities,
+          if (promo.text.trim().isNotEmpty) 'promo_code': promo.text.trim(),
+          'recipient_details': {},
+          'idempotency_key': checkoutAttemptKey,
+        },
+      );
+      final data = Map<String, dynamic>.from(
+        response['data'] as Map? ?? const {},
+      );
+      if (data['checkout_url']?.toString().isNotEmpty == true) return response;
+
+      final retryAfter = (data['retry_after_seconds'] as num?)?.toInt() ?? 1;
+      if (attempt == attempts - 1) {
+        throw const ApiException(
+          'Secure payment is still being prepared. Please try again in a moment.',
+        );
+      }
+      await Future<void>.delayed(Duration(seconds: retryAfter.clamp(1, 3)));
+    }
+
+    throw const ApiException('TKTS APP could not start secure payment.');
   }
 }
 
