@@ -4630,12 +4630,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         audience: 'buyer',
         data: {'subject': 'Buyer reported an order issue', 'message': note},
       );
-      if (mounted)
+      if (mounted) {
         showAppNotice(context, 'Support request sent with your order number.');
+      }
     } catch (error) {
-      if (mounted) showError(context, error);
+      if (mounted) {
+        showError(context, error);
+      }
     } finally {
-      if (mounted) setState(() => orderActionBusy = false);
+      if (mounted) {
+        setState(() => orderActionBusy = false);
+      }
     }
   }
 }
