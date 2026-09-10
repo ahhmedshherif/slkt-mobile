@@ -76,7 +76,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
           .toList();
 
   int get maxTickets =>
-      ((widget.event['max_tickets_per_order'] as num?)?.toInt() ?? 5).clamp(
+      ((widget.event['max_tickets_per_order'] as num?)?.toInt() ?? 10).clamp(
         1,
         5,
       );
@@ -354,7 +354,7 @@ class _CheckoutCartSheetState extends State<_CheckoutCartSheet> {
         icon: Icons.add_shopping_cart_rounded,
         title: 'Your cart is empty',
         message:
-            'Choose one or more tickets above. You can buy up to 5 per order.',
+            'Choose one or more tickets above. You can buy up to 10 per order.',
       );
     }
     final subtotal = (preview?['subtotal'] as num?)?.toDouble() ?? localTotal;
@@ -796,6 +796,15 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           body.style.setProperty('margin', '0', 'important');
           body.style.setProperty('padding', '0', 'important');
           body.style.setProperty('min-height', '100vh', 'important');
+          const style = document.createElement('style');
+          style.textContent = `
+            @media (max-width: 664px) {
+              .mainViewTwo_bg__GVA-Q .mainViewTwo_container__L4KHw {
+                max-height: 100% !important;
+              }
+            }
+          `;
+          document.head?.appendChild(style);
           document.querySelectorAll('iframe').forEach((frame) => {
             frame.style.setProperty('display', 'block', 'important');
             frame.style.setProperty('margin-top', '0', 'important');
