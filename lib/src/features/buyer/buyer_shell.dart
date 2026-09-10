@@ -364,6 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
           query: {'per_page': 8, 'period': 'past'},
         ),
         widget.api.get('/mobile/events', query: buildHomeTrendingQuery()),
+        widget.api.get('/mobile/bootstrap'),
       ]);
       Map<String, dynamic> tickets = const {};
       Map<String, dynamic> orders = const {};
@@ -384,6 +385,11 @@ class _HomeScreenState extends State<HomeScreen> {
         'recommended': responses[1]['data'] ?? [],
         'past': responses[2]['data'] ?? [],
         'trending': responses[3]['data'] ?? [],
+        'ads':
+            Map<String, dynamic>.from(
+              responses[4]['data'] as Map? ?? const {},
+            )['hero'] ??
+            const {},
         'tickets': tickets['tickets'] ?? [],
         'orders': orders['data'] ?? [],
         'recent': recent,
@@ -476,6 +482,28 @@ class _HomeScreenState extends State<HomeScreen> {
               final pending = orders
                   .where((order) => order['can_resume_payment'] == true)
                   .toList();
+              final hero = Map<String, dynamic>.from(
+                data['ads'] as Map? ?? const {},
+              );
+              final slides = List<Map<String, dynamic>>.from(
+                (hero['slides'] as List? ?? const []).map(
+                  (item) => Map<String, dynamic>.from(item as Map),
+                ),
+              );
+              final adOne = slides
+                  .where(
+                    (slide) =>
+                        slide['is_active'] != false &&
+                        slide['placement'] == 'home_ad_1',
+                  )
+                  .toList();
+              final adTwo = slides
+                  .where(
+                    (slide) =>
+                        slide['is_active'] != false &&
+                        slide['placement'] == 'home_ad_2',
+                  )
+                  .toList();
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -486,6 +514,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       order: pending.first,
                       onContinue: widget.openOrders,
                     ),
+                  ],
+                  if (adOne.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    _HomeAdCarousel(label: 'Featured', slides: adOne),
                   ],
                   const SizedBox(height: 28),
                   if (upcoming.isEmpty)
@@ -527,6 +559,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         onViewAll: widget.explore,
                         onOpen: _open,
                       ),
+                    ],
+                    if (adTwo.isNotEmpty) ...[
+                      const SizedBox(height: 30),
+                      _HomeAdCarousel(label: 'Discover more', slides: adTwo),
                     ],
                     if (trending.isNotEmpty) ...[
                       const SizedBox(height: 30),
@@ -595,6 +631,78 @@ class _HomeScreenState extends State<HomeScreen> {
     event,
     widget.purchaseCompleted,
     widget.openTickets,
+  );
+}
+
+class _HomeAdCarousel extends StatelessWidget {
+  const _HomeAdCarousel({required this.label, required this.slides});
+
+  final String label;
+  final List<Map<String, dynamic>> slides;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 10),
+      SizedBox(
+        height: 150,
+        child: PageView.builder(
+          controller: PageController(viewportFraction: .92),
+          itemCount: slides.length,
+          itemBuilder: (context, index) {
+            final slide = slides[index];
+            final image =
+                (slide['mobile_image'] ??
+                        slide['image'] ??
+                        slide['desktop_image'])
+                    ?.toString() ??
+                '';
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    EventImage(url: image, fit: BoxFit.cover),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: .6),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Text(
+                          slide['title']?.toString() ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ],
   );
 }
 

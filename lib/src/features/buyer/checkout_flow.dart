@@ -799,6 +799,12 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           document.querySelectorAll('iframe').forEach((frame) => {
             frame.style.setProperty('display', 'block', 'important');
             frame.style.setProperty('margin-top', '0', 'important');
+            // Paymob's outer shell reserves a visual spacer above the card on
+            // Android. Crop only that provider-owned spacer; the TKTS header
+            // stays outside the WebView and remains fully visible.
+            frame.style.setProperty('position', 'relative', 'important');
+            frame.style.setProperty('top', '-88px', 'important');
+            frame.style.setProperty('height', 'calc(100% + 88px)', 'important');
           });
         })();
       ''');
