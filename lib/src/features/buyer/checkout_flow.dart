@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/api_client.dart';
 import '../../core/buyer_local_store.dart';
@@ -742,13 +743,35 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
             return NavigationDecision.navigate;
           },
         ),
-      )
-      ..loadRequest(widget.checkoutUrl);
+      );
+    unawaited(_loadSecureCheckout());
     poller = Timer.periodic(const Duration(seconds: 3), (_) => _checkOrder());
     countdown = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _tickCountdown(),
     );
+  }
+
+  /// Paymob Unified Checkout uses cookies inside its card-payment iframe.
+  /// Android WebView blocks third-party cookies by default, which leaves the
+  /// provider transaction pending after the card form is submitted. Enable
+  /// them only for this short-lived, host-allowlisted payment WebView.
+  Future<void> _loadSecureCheckout() async {
+    try {
+      final platformController = controller.platform;
+      if (platformController is AndroidWebViewController) {
+        final cookieManager = WebViewCookieManager().platform;
+        if (cookieManager is AndroidWebViewCookieManager) {
+          await cookieManager.setAcceptThirdPartyCookies(
+            platformController,
+            true,
+          );
+        }
+      }
+      await controller.loadRequest(widget.checkoutUrl);
+    } catch (_) {
+      if (mounted) setState(() => pageFailed = true);
+    }
   }
 
   @override
