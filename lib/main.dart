@@ -22,11 +22,14 @@ Future<void> main() async {
   final api = ApiClient();
   final session = SessionController(api);
   final pushNotifications = PushNotifications(session);
+  // iOS must configure the OneSignal/APNs delegate during launch, before the
+  // first Flutter frame. Delaying this until after runApp can cause APNs to
+  // time out before the SDK receives the registration callback.
+  await pushNotifications.initialize();
   runApp(
     EvntsApp(api: api, session: session, pushNotifications: pushNotifications),
   );
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(pushNotifications.initialize());
     unawaited(session.restore());
   });
 }
