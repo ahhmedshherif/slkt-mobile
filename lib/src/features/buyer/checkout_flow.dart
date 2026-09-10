@@ -707,6 +707,7 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
   bool pageFailed = false;
   bool expired = false;
   CheckoutPaymentStatus? terminalStatus;
+  Map<String, dynamic>? confirmedOrder;
   bool fiveMinuteWarningSent = false;
   bool twoMinuteWarningSent = false;
   bool trustedCheckoutLoaded = false;
@@ -734,6 +735,7 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           },
           onPageFinished: (url) {
             _inspectUrl(url);
+            unawaited(_compactPaymentViewport());
             unawaited(_installKeyboardVisibilityHelper());
           },
           onWebResourceError: (_) {
@@ -779,6 +781,32 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
     }
   }
 
+  /// Paymob renders the checkout inside an outer page before its payment
+  /// surface. Keep that shell flush with our reservation header so there is
+  /// no unused band between the server-timed counter and the checkout.
+  Future<void> _compactPaymentViewport() async {
+    try {
+      await controller.runJavaScript('''
+        (() => {
+          const root = document.documentElement;
+          const body = document.body;
+          if (!body) return;
+          root.style.setProperty('margin', '0', 'important');
+          root.style.setProperty('padding', '0', 'important');
+          body.style.setProperty('margin', '0', 'important');
+          body.style.setProperty('padding', '0', 'important');
+          body.style.setProperty('min-height', '100vh', 'important');
+          document.querySelectorAll('iframe').forEach((frame) => {
+            frame.style.setProperty('display', 'block', 'important');
+            frame.style.setProperty('margin-top', '0', 'important');
+          });
+        })();
+      ''');
+    } catch (_) {
+      // Payment remains functional if Paymob changes its document policy.
+    }
+  }
+
   @override
   void dispose() {
     poller?.cancel();
@@ -790,6 +818,17 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    // Once Laravel confirms Paymob's signed result, remove the payment
+    // WebView entirely. The buyer sees a focused success moment instead of a
+    // stale provider page and can continue straight to the ticket wallet.
+    if (terminalStatus == CheckoutPaymentStatus.paid) {
+      return _PaymentSuccessScreen(
+        order: confirmedOrder ?? const <String, dynamic>{},
+        orderNumber: widget.orderNumber,
+        onViewTickets: _finishPaid,
+      );
+    }
 
     return AnimatedPadding(
       padding: EdgeInsets.only(bottom: keyboardInset),
@@ -1009,12 +1048,6 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
                     ],
                   ),
                 ),
-                const ColoredBox(
-                  color: AppColors.paper,
-                  child: SizedBox(height: 0),
-                ),
-                if (progress < 100)
-                  LinearProgressIndicator(value: progress / 100, minHeight: 3),
                 Expanded(
                   child: Stack(
                     children: [
@@ -1173,7 +1206,13 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
         poller?.cancel();
         countdown?.cancel();
         unawaited(BuyerLocalStore.clearPendingCheckout());
-        setState(() => terminalStatus = CheckoutPaymentStatus.paid);
+        HapticFeedback.heavyImpact();
+        setState(() {
+          confirmedOrder = Map<String, dynamic>.from(
+            response['data'] as Map? ?? const <String, dynamic>{},
+          );
+          terminalStatus = CheckoutPaymentStatus.paid;
+        });
       } else if (['failed', 'cancelled', 'refunded'].contains(status)) {
         poller?.cancel();
         countdown?.cancel();
@@ -1293,6 +1332,226 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
       );
     }
   }
+}
+
+class _PaymentSuccessScreen extends StatelessWidget {
+  const _PaymentSuccessScreen({
+    required this.order,
+    required this.orderNumber,
+    required this.onViewTickets,
+  });
+
+  final Map<String, dynamic> order;
+  final String orderNumber;
+  final VoidCallback onViewTickets;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final event = order['event'] is Map
+        ? Map<String, dynamic>.from(order['event'] as Map)
+        : const <String, dynamic>{};
+    final items = order['items'] is List ? order['items'] as List : const [];
+    final ticketCount = items.fold<int>(0, (total, item) {
+      final value = item is Map ? item['quantity'] : null;
+      return total + (value is num ? value.toInt() : 0);
+    });
+    final total = order['total_amount'];
+    final currency = order['currency']?.toString() ?? 'EGP';
+    final amount = total is num
+        ? '$currency ${total.toStringAsFixed(2)}'
+        : null;
+
+    return ColoredBox(
+      color: AppColors.paper,
+      child: SafeArea(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 720),
+          curve: const Cubic(0.05, 0.7, 0.1, 1),
+          builder: (context, progress, child) => Stack(
+            children: [
+              ...List.generate(18, (index) {
+                final fromLeft = .12 + ((index * 37) % 76) / 100;
+                final drift = ((index % 5) - 2) * 22.0;
+                final start = (index % 6) * .045;
+                final local = ((progress - start) / (1 - start))
+                    .clamp(0.0, 1.0)
+                    .toDouble();
+                return Positioned(
+                  left:
+                      MediaQuery.sizeOf(context).width * fromLeft +
+                      (drift * local),
+                  top: 74 + (local * local * 300) + ((index % 3) * 12),
+                  child: Transform.rotate(
+                    angle: local * (index.isEven ? 3.2 : -2.7),
+                    child: Opacity(
+                      opacity: (1 - local).clamp(0.0, 1.0),
+                      child: Container(
+                        width: index.isEven ? 8 : 5,
+                        height: index.isEven ? 13 : 11,
+                        decoration: BoxDecoration(
+                          color: [
+                            AppColors.yellow,
+                            const Color(0xFFB89A6A),
+                            AppColors.success,
+                            const Color(0xFF541627),
+                          ][index % 4],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+              Center(
+                child: Transform.translate(
+                  offset: Offset(0, 24 * (1 - progress)),
+                  child: Opacity(
+                    opacity: progress,
+                    child: Transform.scale(
+                      scale: .82 + (.18 * progress),
+                      child: child,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: AppColors.success,
+                    shape: BoxShape.circle,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x442A9D6F),
+                        blurRadius: 28,
+                        offset: Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 50,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Congratulations!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Payment confirmed. Your tickets are ready.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE7DED5)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event['name']?.toString() ?? 'TKTS APP order',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _SuccessDetail(
+                        label: 'Order',
+                        value: order['order_number']?.toString() ?? orderNumber,
+                      ),
+                      if (ticketCount > 0)
+                        _SuccessDetail(
+                          label: 'Tickets',
+                          value:
+                              '$ticketCount ticket${ticketCount == 1 ? '' : 's'}',
+                        ),
+                      if (amount != null)
+                        _SuccessDetail(
+                          label: 'Paid',
+                          value: amount,
+                          strong: true,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 26),
+                FilledButton.icon(
+                  onPressed: onViewTickets,
+                  icon: const Icon(Icons.confirmation_number_rounded),
+                  label: const Text('View my tickets'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    backgroundColor: AppColors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuccessDetail extends StatelessWidget {
+  const _SuccessDetail({
+    required this.label,
+    required this.value,
+    this.strong = false,
+  });
+
+  final String label;
+  final String value;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 7),
+    child: Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: AppColors.muted, fontSize: 13),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _PaymentNotice extends StatelessWidget {

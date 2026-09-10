@@ -4472,7 +4472,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ],
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
-                    onPressed: orderActionBusy ? null : () => _reportProblem(order),
+                    onPressed: orderActionBusy
+                        ? null
+                        : () => _reportProblem(order),
                     icon: const Icon(Icons.support_agent_rounded),
                     label: const Text('Report a problem'),
                     style: OutlinedButton.styleFrom(
@@ -4568,12 +4570,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         '/mobile/buyer/orders/${order['id']}/cancel',
         audience: 'buyer',
       );
-      final event = Map<String, dynamic>.from(order['event'] as Map? ?? const {});
+      final event = Map<String, dynamic>.from(
+        order['event'] as Map? ?? const {},
+      );
       final slug = event['slug']?.toString() ?? '';
       await BuyerLocalStore.clearPendingCheckout();
       if (slug.isNotEmpty) await BuyerLocalStore.clearCheckoutAttempt(slug);
       if (!mounted) return;
-      showAppNotice(context, 'Payment cancelled. You can start a fresh checkout.');
+      showAppNotice(
+        context,
+        'Payment cancelled. You can start a fresh checkout.',
+      );
       _reload();
     } catch (error) {
       if (mounted) showError(context, error);
@@ -4596,7 +4603,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           maxLength: 4000,
           decoration: InputDecoration(
             labelText: 'What happened?',
-            helperText: 'Order ${order['order_number']} is attached automatically.',
+            helperText:
+                'Order ${order['order_number']} is attached automatically.',
           ),
         ),
         actions: [
@@ -4620,12 +4628,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       await widget.api.post(
         '/mobile/buyer/orders/${order['id']}/support',
         audience: 'buyer',
-        data: {
-          'subject': 'Buyer reported an order issue',
-          'message': note,
-        },
+        data: {'subject': 'Buyer reported an order issue', 'message': note},
       );
-      if (mounted) showAppNotice(context, 'Support request sent with your order number.');
+      if (mounted)
+        showAppNotice(context, 'Support request sent with your order number.');
     } catch (error) {
       if (mounted) showError(context, error);
     } finally {
@@ -4861,6 +4867,20 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
+            _ProfileSection(
+              title: 'Account deletion',
+              icon: Icons.delete_forever_outlined,
+              children: [
+                ProfileTile(
+                  onTap: () => _deleteAccount(context),
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Delete my account',
+                  subtitle: 'Remove your personal data from TKTS APP',
+                  destructive: true,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
             const _ProfileSection(
               title: 'Notifications',
               icon: Icons.notifications_none_rounded,
@@ -5011,6 +5031,148 @@ class ProfileScreen extends StatelessWidget {
       if (context.mounted) showError(context, error);
     }
   }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final values = await showModalBottomSheet<Map<String, String>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _AccountDeletionSheet(),
+    );
+    if (values == null || !context.mounted) return;
+
+    try {
+      await api.delete('/buyer/profile', audience: 'buyer', data: values);
+      await session.logout();
+      if (context.mounted) {
+        showAppNotice(context, 'Your account has been deleted.');
+      }
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
+  }
+}
+
+class _AccountDeletionSheet extends StatefulWidget {
+  const _AccountDeletionSheet();
+
+  @override
+  State<_AccountDeletionSheet> createState() => _AccountDeletionSheetState();
+}
+
+class _AccountDeletionSheetState extends State<_AccountDeletionSheet> {
+  final _password = TextEditingController();
+  final _confirmation = TextEditingController();
+
+  @override
+  void dispose() {
+    _password.dispose();
+    _confirmation.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_password.text.isEmpty || _confirmation.text.trim() != 'DELETE') {
+      showAppNotice(
+        context,
+        'Enter your current password and type DELETE to continue.',
+        error: true,
+      );
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    Navigator.pop(context, {
+      'current_password': _password.text,
+      'confirmation': 'DELETE',
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedPadding(
+    duration: const Duration(milliseconds: 220),
+    curve: Curves.easeOutCubic,
+    padding: EdgeInsets.fromLTRB(
+      22,
+      20,
+      22,
+      MediaQuery.viewInsetsOf(context).bottom + 24,
+    ),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black12,
+                borderRadius: BorderRadius.circular(9),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFB3261E),
+            size: 34,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Delete your account?',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'This cannot be undone. Your personal profile data and access will be removed. Paid-order and payment records are retained only where required for legal, tax and fraud-prevention purposes, without your profile details.',
+            style: TextStyle(color: AppColors.muted, height: 1.45),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'You must first resolve active tickets, ticket transfers and pending payments.',
+            style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            key: const ValueKey('delete-account-password'),
+            controller: _password,
+            obscureText: true,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Current password',
+              prefixIcon: Icon(Icons.lock_outline_rounded),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('delete-account-confirmation'),
+            controller: _confirmation,
+            textCapitalization: TextCapitalization.characters,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+            decoration: const InputDecoration(
+              labelText: 'Type DELETE to confirm',
+              prefixIcon: Icon(Icons.delete_outline_rounded),
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            key: const ValueKey('delete-account-submit'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB3261E),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+            ),
+            onPressed: _submit,
+            icon: const Icon(Icons.delete_forever_rounded),
+            label: const Text('Permanently delete my account'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _SecureProfileSheet extends StatefulWidget {
@@ -5865,20 +6027,31 @@ class ProfileTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
+    this.destructive = false,
   });
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
+  final bool destructive;
 
   @override
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.only(bottom: 10),
     child: ListTile(
-      leading: Icon(icon, color: AppColors.coralDark),
-      title: Text(title),
+      leading: Icon(
+        icon,
+        color: destructive ? const Color(0xFFB3261E) : AppColors.coralDark,
+      ),
+      title: Text(
+        title,
+        style: destructive ? const TextStyle(color: Color(0xFFB3261E)) : null,
+      ),
       subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        color: destructive ? const Color(0xFFB3261E) : null,
+      ),
       onTap: onTap,
     ),
   );

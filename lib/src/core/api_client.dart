@@ -63,8 +63,11 @@ class ApiClient {
     Object? data,
   }) => _request('PATCH', path, audience: audience, data: data);
 
-  Future<Map<String, dynamic>> delete(String path, {String? audience}) =>
-      _request('DELETE', path, audience: audience);
+  Future<Map<String, dynamic>> delete(
+    String path, {
+    String? audience,
+    Object? data,
+  }) => _request('DELETE', path, audience: audience, data: data);
 
   Future<Map<String, dynamic>> _request(
     String method,
