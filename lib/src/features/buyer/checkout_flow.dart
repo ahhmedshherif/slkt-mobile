@@ -709,6 +709,8 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
   CheckoutPaymentStatus? terminalStatus;
   bool fiveMinuteWarningSent = false;
   bool twoMinuteWarningSent = false;
+  bool trustedCheckoutLoaded = false;
+  String? bankVerificationHost;
 
   @override
   void initState() {
@@ -724,6 +726,10 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           },
           onPageStarted: (url) {
             if (mounted) setState(() => pageFailed = false);
+            final uri = Uri.tryParse(url);
+            if (uri != null && isTrustedPaymobHost(uri.host)) {
+              trustedCheckoutLoaded = true;
+            }
             _inspectUrl(url);
           },
           onPageFinished: (url) {
@@ -735,8 +741,7 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
           },
           onNavigationRequest: (request) {
             final uri = Uri.tryParse(request.url);
-            if (uri == null ||
-                !isTrustedPaymentNavigationUrl(uri, widget.redirectPath)) {
+            if (uri == null || !_allowsPaymentNavigation(uri)) {
               return NavigationDecision.prevent;
             }
             _inspectUrl(request.url);
@@ -1006,13 +1011,7 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
                 ),
                 const ColoredBox(
                   color: AppColors.paper,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(22, 10, 22, 10),
-                    child: UxStepper(
-                      steps: ['Tickets', 'Details', 'Payment', 'Confirmation'],
-                      currentStep: 2,
-                    ),
-                  ),
+                  child: SizedBox(height: 0),
                 ),
                 if (progress < 100)
                   LinearProgressIndicator(value: progress / 100, minHeight: 3),
@@ -1076,6 +1075,27 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
     } catch (_) {
       // Payment remains usable if the provider blocks helper injection.
     }
+  }
+
+  /// 3DS must sometimes leave Paymob briefly for the card issuer's ACS page.
+  /// We permit one HTTPS issuer host only after a trusted Paymob checkout has
+  /// loaded. Every other navigation remains restricted to Paymob or TKTS.
+  bool _allowsPaymentNavigation(Uri uri) {
+    if (isTrustedPaymentNavigationUrl(uri, widget.redirectPath)) return true;
+    if (!trustedCheckoutLoaded ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return false;
+    }
+
+    final host = uri.host.toLowerCase();
+    if (bankVerificationHost == null) {
+      bankVerificationHost = host;
+      return true;
+    }
+
+    return host == bankVerificationHost;
   }
 
   Widget _statusPanel() {
