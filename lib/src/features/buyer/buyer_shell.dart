@@ -385,10 +385,10 @@ class _HomeScreenState extends State<HomeScreen> {
         'recommended': responses[1]['data'] ?? [],
         'past': responses[2]['data'] ?? [],
         'trending': responses[3]['data'] ?? [],
-        'ads':
+        'mobile_ads':
             Map<String, dynamic>.from(
               responses[4]['data'] as Map? ?? const {},
-            )['hero'] ??
+            )['mobile_home_ads'] ??
             const {},
         'tickets': tickets['tickets'] ?? [],
         'orders': orders['data'] ?? [],
@@ -482,28 +482,17 @@ class _HomeScreenState extends State<HomeScreen> {
               final pending = orders
                   .where((order) => order['can_resume_payment'] == true)
                   .toList();
-              final hero = Map<String, dynamic>.from(
-                data['ads'] as Map? ?? const {},
+              final mobileAds = Map<String, dynamic>.from(
+                data['mobile_ads'] as Map? ?? const {},
               );
-              final slides = List<Map<String, dynamic>>.from(
-                (hero['slides'] as List? ?? const []).map(
-                  (item) => Map<String, dynamic>.from(item as Map),
-                ),
+              final topAds = Map<String, dynamic>.from(
+                mobileAds['top'] as Map? ?? const {},
               );
-              final adOne = slides
-                  .where(
-                    (slide) =>
-                        slide['is_active'] != false &&
-                        slide['placement'] == 'home_ad_1',
-                  )
-                  .toList();
-              final adTwo = slides
-                  .where(
-                    (slide) =>
-                        slide['is_active'] != false &&
-                        slide['placement'] == 'home_ad_2',
-                  )
-                  .toList();
+              final bottomAds = Map<String, dynamic>.from(
+                mobileAds['bottom'] as Map? ?? const {},
+              );
+              final adOne = _activeAds(topAds);
+              final adTwo = _activeAds(bottomAds);
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -517,7 +506,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                   if (adOne.isNotEmpty) ...[
                     const SizedBox(height: 24),
-                    _HomeAdCarousel(label: 'Featured', slides: adOne),
+                    _HomeAdCarousel(
+                      label: topAds['title']?.toString() ?? 'Featured for you',
+                      slides: adOne,
+                      onOpen: _openAd,
+                    ),
                   ],
                   const SizedBox(height: 28),
                   if (upcoming.isEmpty)
@@ -562,7 +555,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                     if (adTwo.isNotEmpty) ...[
                       const SizedBox(height: 30),
-                      _HomeAdCarousel(label: 'Discover more', slides: adTwo),
+                      _HomeAdCarousel(
+                        label:
+                            bottomAds['title']?.toString() ?? 'Discover more',
+                        slides: adTwo,
+                        onOpen: _openAd,
+                      ),
                     ],
                     if (trending.isNotEmpty) ...[
                       const SizedBox(height: 30),
@@ -608,6 +606,39 @@ class _HomeScreenState extends State<HomeScreen> {
     raw as List? ?? const [],
   ).map((value) => Map<String, dynamic>.from(value as Map)).toList();
 
+  List<Map<String, dynamic>> _activeAds(Map<String, dynamic> section) {
+    if (section['enabled'] != true) return const [];
+    return List<Map<String, dynamic>>.from(
+      (section['slides'] as List? ?? const []).map(
+        (item) => Map<String, dynamic>.from(item as Map),
+      ),
+    ).where((slide) => slide['is_active'] != false).toList();
+  }
+
+  Future<void> _openAd(Map<String, dynamic> slide) async {
+    HapticFeedback.selectionClick();
+    final eventSlug = slide['event_slug']?.toString().trim() ?? '';
+    if (eventSlug.isNotEmpty) {
+      try {
+        final response = await widget.api.get('/mobile/events/$eventSlug');
+        if (!mounted) return;
+        _open(Map<String, dynamic>.from(response['data'] as Map));
+      } catch (error) {
+        if (mounted) showError(context, error);
+      }
+      return;
+    }
+
+    final rawUrl = slide['cta_url']?.toString().trim() ?? '';
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null ||
+        !uri.hasScheme ||
+        !{'https', 'http'}.contains(uri.scheme)) {
+      return;
+    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   List<Map<String, dynamic>> _nearby(List<Map<String, dynamic>> events) {
     final cities = events
         .map((event) => event['venue']?['city']?.toString().trim())
@@ -635,10 +666,15 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HomeAdCarousel extends StatelessWidget {
-  const _HomeAdCarousel({required this.label, required this.slides});
+  const _HomeAdCarousel({
+    required this.label,
+    required this.slides,
+    required this.onOpen,
+  });
 
   final String label;
   final List<Map<String, dynamic>> slides;
+  final ValueChanged<Map<String, dynamic>> onOpen;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -647,7 +683,7 @@ class _HomeAdCarousel extends StatelessWidget {
       Text(label, style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 10),
       SizedBox(
-        height: 150,
+        height: 210,
         child: PageView.builder(
           controller: PageController(viewportFraction: .92),
           itemCount: slides.length,
@@ -661,41 +697,52 @@ class _HomeAdCarousel extends StatelessWidget {
                 '';
             return Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    EventImage(url: image, fit: BoxFit.cover),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: .6),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Align(
-                        alignment: Alignment.bottomLeft,
-                        child: Text(
-                          slide['title']?.toString() ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
+              child: Semantics(
+                button: true,
+                label: slide['title']?.toString() ?? label,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => onOpen(slide),
+                    borderRadius: BorderRadius.circular(14),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          EventImage(url: image, fit: BoxFit.cover),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: .68),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
+                          Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Text(
+                                slide['title']?.toString() ?? '',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 19,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             );
