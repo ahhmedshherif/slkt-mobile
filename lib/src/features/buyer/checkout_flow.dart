@@ -11,7 +11,7 @@ import '../../core/buyer_local_store.dart';
 import '../../core/theme.dart';
 import '../../widgets/common.dart';
 
-enum CheckoutPaymentStatus { paid, pending, failed }
+enum CheckoutPaymentStatus { paid, pending, review, failed }
 
 class CheckoutCompletion {
   const CheckoutCompletion({
@@ -844,6 +844,20 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
         onViewTickets: _finishPaid,
       );
     }
+    if (terminalStatus == CheckoutPaymentStatus.failed) {
+      return _PaymentFailureScreen(
+        orderNumber: widget.orderNumber,
+        expired: expired,
+        onReturnToCart: _finishFailed,
+      );
+    }
+    if (terminalStatus == CheckoutPaymentStatus.review) {
+      return _PaymentReviewScreen(
+        orderNumber: widget.orderNumber,
+        onCheckAgain: _checkReviewAgain,
+        onReturnToOrders: _finishReview,
+      );
+    }
 
     return AnimatedPadding(
       padding: EdgeInsets.only(bottom: keyboardInset),
@@ -1241,7 +1255,9 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
         }
         setState(() {
           expired = status == 'expired';
-          terminalStatus = CheckoutPaymentStatus.failed;
+          terminalStatus = status == 'payment_review'
+              ? CheckoutPaymentStatus.review
+              : CheckoutPaymentStatus.failed;
         });
       }
     } catch (_) {
@@ -1262,6 +1278,32 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
         orderNumber: widget.orderNumber,
       ),
     );
+  }
+
+  void _finishFailed() {
+    Navigator.pop(
+      context,
+      CheckoutCompletion(
+        status: CheckoutPaymentStatus.failed,
+        orderId: widget.orderId,
+        orderNumber: widget.orderNumber,
+      ),
+    );
+  }
+
+  void _finishReview() => Navigator.pop(
+    context,
+    CheckoutCompletion(
+      status: CheckoutPaymentStatus.pending,
+      orderId: widget.orderId,
+      orderNumber: widget.orderNumber,
+    ),
+  );
+
+  Future<void> _checkReviewAgain() async {
+    if (!mounted) return;
+    setState(() => terminalStatus = null);
+    await _checkOrder();
   }
 
   double get _progressValue =>
@@ -1346,6 +1388,193 @@ class _PaymentWebViewSheetState extends State<_PaymentWebViewSheet> {
         ),
       );
     }
+  }
+}
+
+class _PaymentReviewScreen extends StatelessWidget {
+  const _PaymentReviewScreen({
+    required this.orderNumber,
+    required this.onCheckAgain,
+    required this.onReturnToOrders,
+  });
+  final String orderNumber;
+  final Future<void> Function() onCheckAgain;
+  final VoidCallback onReturnToOrders;
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+    color: AppColors.paper,
+    child: SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 82,
+                height: 82,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF0C9),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.hourglass_top_rounded,
+                  color: Color(0xFF8A5A00),
+                  size: 44,
+                ),
+              ),
+              const SizedBox(height: 22),
+              const Text(
+                'Payment is being reviewed',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Paymob is still confirming this payment. Keep this order; we will issue tickets automatically once it is confirmed.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.muted, height: 1.45),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                orderNumber,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: onCheckAgain,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Check payment status'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  backgroundColor: AppColors.black,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              TextButton(
+                onPressed: onReturnToOrders,
+                child: const Text('Return to orders'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _PaymentFailureScreen extends StatelessWidget {
+  const _PaymentFailureScreen({
+    required this.orderNumber,
+    required this.expired,
+    required this.onReturnToCart,
+  });
+
+  final String orderNumber;
+  final bool expired;
+  final VoidCallback onReturnToCart;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return ColoredBox(
+      color: AppColors.paper,
+      child: SafeArea(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          builder: (context, progress, child) => Center(
+            child: Transform.translate(
+              offset: Offset(0, 18 * (1 - progress)),
+              child: Opacity(opacity: progress, child: child),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 82,
+                  height: 82,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFE4DE),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFB42318)),
+                  ),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    color: Color(0xFFB42318),
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  expired ? 'Reservation expired' : 'Payment not completed',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  expired
+                      ? 'Your 15-minute reservation ended, so these tickets are available to book again.'
+                      : 'We did not receive a confirmed payment for this order. No tickets were issued.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 15,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE7DED5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.receipt_long_outlined,
+                        color: AppColors.muted,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          orderNumber,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 26),
+                FilledButton.icon(
+                  onPressed: onReturnToCart,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Return to cart'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
+                    backgroundColor: AppColors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -4748,30 +4748,52 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final message = TextEditingController();
     final sent = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Report a problem'),
-        content: TextField(
-          controller: message,
-          autofocus: true,
-          minLines: 3,
-          maxLines: 6,
-          maxLength: 4000,
-          decoration: InputDecoration(
-            labelText: 'What happened?',
-            helperText:
-                'Order ${order['order_number']} is attached automatically.',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text('Report an order issue'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Order ${order['order_number']} will be included automatically.',
+                  style: const TextStyle(color: AppColors.muted, height: 1.35),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: message,
+                  autofocus: true,
+                  minLines: 4,
+                  maxLines: 7,
+                  maxLength: 4000,
+                  onChanged: (_) => setModalState(() {}),
+                  textInputAction: TextInputAction.newline,
+                  decoration: const InputDecoration(
+                    labelText: 'Tell us what happened',
+                    hintText:
+                        'For example: I was charged but did not receive tickets.',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: message.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.send_rounded, size: 18),
+              label: const Text('Send report'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Send'),
-          ),
-        ],
       ),
     );
     final note = message.text.trim();
