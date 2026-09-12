@@ -35,17 +35,9 @@ target 'Runner' do
   end
 end
 
-# Keep the notification service extension as a sibling target. Nesting it
-# under Runner makes it inherit the Flutter OneSignal pod and then install the
-# native OneSignal pod again, which produces duplicate framework build steps.
-target 'OneSignalNotificationServiceExtension' do
-  # Keep the extension on the same native SDK generation as the Flutter
-  # OneSignal plugin. A mismatched extension can prevent APNs registration.
-  # Deliberately do not inherit `use_frameworks!` here: the extension only
-  # needs OneSignalXCFramework, while inheriting the Runner framework setup
-  # makes Xcode embed the OneSignal binaries twice during archive.
-  pod 'OneSignalXCFramework', '>= 5.0.0', '< 6.0'
-end
+# The service extension stays native-only. Push subscription and APNs delivery
+# are owned by the OneSignal Flutter pod in Runner; adding OneSignal again to
+# this child target makes Xcode embed the same XCFrameworks twice on archive.
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|

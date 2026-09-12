@@ -1,16 +1,13 @@
-import OneSignalExtension
 import UserNotifications
 
 final class NotificationService: UNNotificationServiceExtension {
     private var contentHandler: ((UNNotificationContent) -> Void)?
-    private var receivedRequest: UNNotificationRequest?
     private var bestAttemptContent: UNMutableNotificationContent?
 
     override func didReceive(
         _ request: UNNotificationRequest,
         withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
     ) {
-        self.receivedRequest = request
         self.contentHandler = contentHandler
         bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent
 
@@ -19,19 +16,14 @@ final class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        OneSignalExtension.didReceiveNotificationExtensionRequest(
-            request,
-            with: bestAttemptContent,
-            withContentHandler: contentHandler
-        )
+        // Keep the extension dependency-free. OneSignal in the Runner target
+        // registers with APNs; this extension merely preserves the notification
+        // content if iOS invokes it for mutable-content payloads.
+        contentHandler(bestAttemptContent)
     }
 
     override func serviceExtensionTimeWillExpire() {
-        guard let receivedRequest, let bestAttemptContent else { return }
-        OneSignalExtension.serviceExtensionTimeWillExpireRequest(
-            receivedRequest,
-            with: bestAttemptContent
-        )
+        guard let bestAttemptContent else { return }
         contentHandler?(bestAttemptContent)
     }
 }
