@@ -39,10 +39,12 @@ end
 # under Runner makes it inherit the Flutter OneSignal pod and then install the
 # native OneSignal pod again, which produces duplicate framework build steps.
 target 'OneSignalNotificationServiceExtension' do
-  use_frameworks!
   # Keep the extension on the same native SDK generation as the Flutter
   # OneSignal plugin. A mismatched extension can prevent APNs registration.
-  pod 'OneSignalXCFramework', '5.6.1'
+  # Deliberately do not inherit `use_frameworks!` here: the extension only
+  # needs OneSignalXCFramework, while inheriting the Runner framework setup
+  # makes Xcode embed the OneSignal binaries twice during archive.
+  pod 'OneSignalXCFramework', '>= 5.0.0', '< 6.0'
 end
 
 post_install do |installer|
