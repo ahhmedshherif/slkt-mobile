@@ -76,6 +76,27 @@ workflows:
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=ONESIGNAL_APP_ID="${ONESIGNAL_APP_ID:-}" \
             --export-options-plist=/Users/builder/export_options.plist
+      - name: Verify signed push entitlements
+        script: |
+          set -euo pipefail
+          ipa_path="$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)"
+          test -n "$ipa_path"
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+          unzip -q "$ipa_path" -d "$verify_dir"
+
+          runner_entitlements="$verify_dir/Runner.entitlements.plist"
+          codesign -d --entitlements :- "$verify_dir/Payload/Runner.app" > "$runner_entitlements" 2>/dev/null
+          /usr/libexec/PlistBuddy -c 'Print :application-identifier' "$runner_entitlements" | grep -Eq '\.com\.tktsapp\.jumpersagency$'
+          /usr/libexec/PlistBuddy -c 'Print :aps-environment' "$runner_entitlements" | grep -qx 'production'
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$runner_entitlements" | grep -qx 'group.com.tktsapp.jumpersagency.onesignal'
+
+          extension_path="$verify_dir/Payload/Runner.app/PlugIns/OneSignalNotificationServiceExtension.appex"
+          test -d "$extension_path"
+          extension_entitlements="$verify_dir/OneSignalExtension.entitlements.plist"
+          codesign -d --entitlements :- "$extension_path" > "$extension_entitlements" 2>/dev/null
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$extension_entitlements" | grep -qx 'group.com.tktsapp.jumpersagency.onesignal'
+          echo 'Verified TKTS APP production APNs and OneSignal app-group entitlements.'
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
